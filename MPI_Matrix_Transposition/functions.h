@@ -25,10 +25,10 @@
 #define CACHESIZEL1I (32*KB)
 #define CACHESIZEL2 (1024*KB)
 #define CACHESIZEL3 (36*KB*KB)
-#define MINIMUMSUBLENGTH pow(2, 4)/2
-#define MAXIMUMSUBLENGTH sqrt(CACHESIZEL1D/(2*sizeof(float)))
 #define FILENAMETGEN "timesGeneral.csv"
 #define FILENAMEGEN "resultsGeneral.csv"
+#define FILENAMETSEQ "timesSequential.csv"
+#define FILENAMESEQ "resultsSequential.csv"
 #define FILENAMETMPIALL "timesMPIAllGather.csv"
 #define FILENAMEMPIALL "resultsMPIAllGather.csv"
 #define FILENAMETMPIROWM "timesMPIRowMajor.csv"
@@ -43,34 +43,57 @@
 #define MAX_THREADS 96
 #define MIN_SIZE pow(2, 4)
 #define MAX_SIZE pow(2, 12)
+#define MIN_SAMPLES 1
+typedef struct Communicator2D {
+    MPI_Datatype submatrix_type;
+    MPI_Datatype resized_type;
+    int sizes[2];
+    int subsizes[2];
+    int starts[2];
+} Communicator2D;
+typedef struct DataCommunicate {
+    int* counts;
+    int* displacements;
+    int size;
+    int nprocs;
+}DataCommunicate;
+extern float* globalsendptr;
+extern float* localrecvptr;
+extern float* globalrecvptr;
+extern float* localsendptr;
 typedef enum {START, SEQ, MPI_ALL, MPI_ROW_M, END} Mode;
 //OMP_LOC_TB, OMP_GLB_TB, END} Mode;
 typedef enum {RANDOM, STATIC, SYM, WORST} Test;
+
+void createData(DataCommunicate* data, int size, int n_procs);
+void freeData(DataCommunicate* data);
+void setupCommunicator(Communicator2D* comm, int size[2], int subsizes[2], int start[2]);
+void dataPopulate(DataCommunicate* comm, int count, int disp_row, int disp_col);
 //Number generation
 float random_float2 (int min, int max);
 //Input Management
 void inputParameters(int argc);
 int valueInputed(int argc, const char* argv, int value);
-int threadInit(const char* argv, int argc, int mode);
 //Generation and deleting
-float** createFloatSquareMatrix(int n);
-float** createFloatSquareMatrixAligned(int n, int sublength);
-float** allocateMatrixPerMode(Mode mode, int n);
+float** createFloatMatrix(int x, int y);
+void create2DFloatMatrix(float*** m, int x, int y);
 void initializeMatrix(float** M, Test test, int n);
 void freeMemory(float** M, int size);
+void free2DMemory(float*** M);
 //Execution
-bool executionProgram(float** M, float** T, Mode mode, int rank, int size);
+bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, Mode mode, int N, int rows, int rank, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender);
 //Check Symmetry Algorithms
 bool checkSym (float** M, int size);
-bool checkSymMPIAllGather (float** M, int rank, int size);
-bool checkSymMPIRowMajor (float** M, int rank, int size);
+//bool checkSymMPIAllGather (float** M, int N, int rank, int rows);
+bool checkSymMPI (float** M, int N, int rank, int rows);
 //Transposition Algorithms
 void matTranspose (float** M, float** T, int size);
-void matTransposeMPIAllGather (float** M, float** T, int rank, int size);
-void matTransposeMPIRowMajor (float** M, float** T, int rank, int size);
+void matTransposeMPIAllGather (float** MGEN, float** M, float** T, float** TGEN, int rank, int N, int rows, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender);
+void matTransposeMPIRowMajor (float** LM, float** TLM, float** T, int rank, int N, int rows);
 //Control Results
-void printMatrix(float** M, int size);
+void printMatrix(float** M, int x, int y);
 void control(float** M, float** T, int N);
+void matrixCheckPerRank(float** M, int rank, int x, int y);
 void bubbleSort(double* a, int size);
 //Cache Management
 void clearCache(long long int dimCache);
