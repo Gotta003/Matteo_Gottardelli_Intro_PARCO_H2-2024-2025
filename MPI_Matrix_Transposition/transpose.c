@@ -48,34 +48,60 @@ int main(int argc, char * argv[]) {
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &NUM_THREADS);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    int rows;
+    int n_x=1, n_y=1;
+    int rows=1;
     if (NUM_THREADS > N) {
         printf("Number of threads %d exceeds N=%d\n", NUM_THREADS, rank);
         MPI_Finalize();
         return 1;
     }
     else {
-        if (N % NUM_THREADS == 0) {
-            rows = N / NUM_THREADS;
-        } else {
-            rows = N / NUM_THREADS + (rank < N % NUM_THREADS ? 1 : 0);
+        if(MODE==MPI_BLOCK) {
+            n_x=(int)sqrt(NUM_THREADS);
+            n_y=(int)sqrt(NUM_THREADS);
+            rows=N/n_y;
+            if(N%(n_x*n_y)!=0) {
+                printf("Number of threads %d is not the square root of N=%d\n", NUM_THREADS, rank);
+                MPI_Finalize();
+                return 0;
+            }
         }
-        printf("Hello rank %d out of %d\n", rank+1, NUM_THREADS);
+        else {
+            if (N % NUM_THREADS == 0) {
+                rows=N/NUM_THREADS;
+            } else {
+                rows=N/NUM_THREADS+(rank<N%NUM_THREADS ? 1 : 0);
+            }
+            n_x=1;
+            n_y=NUM_THREADS;
+            printf("Hello rank %d out of %d\n", rank+1, NUM_THREADS);
+        }
     }
     NUM_THREADS=MIN(NUM_THREADS, N);
-    Communicator2D sender;
+    Communicator2D sender_mpi_all;
     int size[2]={N, N};
-    int subsizes[2]={rows, N};
+    int subsizes[2];
     int starts[2]={0, 0};
-    setupCommunicator(&sender, size, subsizes, starts);
     Communicator2D gen_matrix;
     subsizes[0]=N;
-    setupCommunicator(&gen_matrix, size, subsizes, starts);
+    subsizes[1]=N;
+    setupCommunicator(&gen_matrix, size, subsizes, starts, subsizes[0]*subsizes[1]);
     DataCommunicate sending, receiving;
-    createData(&sending, NUM_THREADS, NUM_THREADS);
-    createData(&receiving, rows*N, NUM_THREADS);
+    //For create data x for columns y for rows
+    if(MODE==MPI_ALL || MODE==SEQ) {
+        createData(&sending, 1, NUM_THREADS);
+        createData(&receiving, 1, n_y);
+    }
+    else {
+        if(MODE==MPI_BLOCK) {
+            createData(&sending, n_x, n_y);
+            createData(&receiving, n_x, n_y);
+        }
+    }
     if(rank==0) {
-        dataPopulate(&sending, 1, 0, 1);
+        if(MODE==MPI_ALL || MODE==SEQ) {
+            dataPopulate(&sending, 1, 0, 1, 0);
+        }
     }
     //Creation cartesian communicator
     while (count<SAMPLES) {
@@ -90,17 +116,39 @@ int main(int argc, char * argv[]) {
             globalrecvptr=&(TGEN[0][0]);
         }
         globalsendptr=&(MGEN[0][0]);
+        subsizes[0]=N;
+        subsizes[1]=N;
+        setupCommunicator(&gen_matrix, size, subsizes, starts, subsizes[0]*subsizes[1]);
+        commitCommunicator(&gen_matrix);
         MPI_Bcast(globalsendptr, 1, gen_matrix.resized_type, 0, MPI_COMM_WORLD);
         //printf("===== RANK %d =====\n", rank);
         //printMatrix(MGEN, N, N);
-        create2DFloatMatrix(&M, rows, N);
-        create2DFloatMatrix(&T, N, rows);
+        freeCommunicator(&gen_matrix);
+        if(MODE==MPI_ALL || MODE==SEQ) {
+            create2DFloatMatrix(&M, rows, N);
+            create2DFloatMatrix(&T, N, rows);
+            size[0]=N;
+            size[1]=N;
+            subsizes[0]=rows;
+            subsizes[1]=N;
+            starts[0]=0;
+            starts[1]=0;
+            setupCommunicator(&sender_mpi_all, size, subsizes, starts, subsizes[0]*subsizes[1]);
+            commitCommunicator(&sender_mpi_all);
+        }
+        else {
+            if(MODE==MPI_BLOCK) {
+                create2DFloatMatrix(&M, rows, rows);
+                create2DFloatMatrix(&T, rows, rows);
+                //commitCommunicator(&sender_mpi_block);
+            }
+        }
         localrecvptr=&(M[0][0]);
         //Starting
         if(rank==0) {
             tw_start=MPI_Wtime();
         }
-        bool symmetry=executionProgram(MGEN, M, T, TGEN, MODE, N, rows, rank, sending, receiving, sender);
+        bool symmetry=executionProgram(MGEN, M, T, TGEN, MODE, N, rows, rank, sending, receiving, sender_mpi_all);
         //Ending
         //MPI_Barrier(MPI_COMM_WORLD);
         if(rank==0) {
@@ -113,6 +161,7 @@ int main(int argc, char * argv[]) {
             }
             printf("Time Elapsed (get time)=%.12f\n", time);
             if(!symmetry) {
+                //printMatrix(TGEN, N, N);
                 control(MGEN, TGEN, N);
             }
             openFilesResultsPerMode(CODE, MODE, N, TESTING, SAMPLES, NUM_THREADS, time);
@@ -121,18 +170,12 @@ int main(int argc, char * argv[]) {
         free2DMemory(&MGEN);
         free2DMemory(&M);
         free2DMemory(&T);
-        //freeMemory(M, N);
-        //freeMemory(T, N);
-        //freeMemory(LM, N);
-        /*if(!symmetry) {
-        //    freeMemory(TLM, rows);
-            freeMemory(T, N);
-        }*/
-        //Incrementing
+        if(MODE==MPI_ALL || MODE==SEQ) {
+            freeCommunicator(&sender_mpi_all);
+        }
         count++;
         MPI_Barrier(MPI_COMM_WORLD);
     }
-    MPI_Type_free(&sender.resized_type);
     freeData(&sending);
     freeData(&receiving);
     MPI_Barrier(MPI_COMM_WORLD);
@@ -140,8 +183,6 @@ int main(int argc, char * argv[]) {
         MPI_Finalize();
         return 0;
     }
-    //MPI_Type_free(&receiver.resized_type);
-    //Printing
     //Take the 10 values in the middle
     const int TAKE_SAMPLES=SAMPLES/5*2;//40%
     int start=SAMPLES/2-TAKE_SAMPLES/2;

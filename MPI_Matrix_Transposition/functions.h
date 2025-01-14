@@ -31,8 +31,8 @@
 #define FILENAMESEQ "resultsSequential.csv"
 #define FILENAMETMPIALL "timesMPIAllGather.csv"
 #define FILENAMEMPIALL "resultsMPIAllGather.csv"
-#define FILENAMETMPIROWM "timesMPIRowMajor.csv"
-#define FILENAMEMPIROWM "resultsMPIRowMajor.csv"
+#define FILENAMETMPIBLOCK "timesMPIBlock.csv"
+#define FILENAMEMPIBLOCK "resultsMPIBlock.csv"
 
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 #define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
@@ -43,7 +43,7 @@
 #define MAX_THREADS 96
 #define MIN_SIZE pow(2, 4)
 #define MAX_SIZE pow(2, 12)
-#define MIN_SAMPLES 1
+#define MIN_SAMPLES 25
 typedef struct Communicator2D {
     MPI_Datatype submatrix_type;
     MPI_Datatype resized_type;
@@ -54,21 +54,23 @@ typedef struct Communicator2D {
 typedef struct DataCommunicate {
     int* counts;
     int* displacements;
-    int size;
-    int nprocs;
+    int nprocs_x;
+    int nprocs_y;
 }DataCommunicate;
 extern float* globalsendptr;
 extern float* localrecvptr;
 extern float* globalrecvptr;
 extern float* localsendptr;
-typedef enum {START, SEQ, MPI_ALL, MPI_ROW_M, END} Mode;
+typedef enum {START, SEQ, MPI_ALL, MPI_BLOCK, END} Mode;
 //OMP_LOC_TB, OMP_GLB_TB, END} Mode;
 typedef enum {RANDOM, STATIC, SYM, WORST} Test;
 
-void createData(DataCommunicate* data, int size, int n_procs);
+void createData(DataCommunicate* data, int n_procs_x, int n_procs_y);
 void freeData(DataCommunicate* data);
-void setupCommunicator(Communicator2D* comm, int size[2], int subsizes[2], int start[2]);
-void dataPopulate(DataCommunicate* comm, int count, int disp_row, int disp_col);
+void setupCommunicator(Communicator2D* comm, int size[2], int subsizes[2], int start[2], int resize);
+void commitCommunicator(Communicator2D* comm);
+void freeCommunicator(Communicator2D* comm);
+void dataPopulate(DataCommunicate* comm, int count, int delay, int disp_row, int disp_col);
 //Number generation
 float random_float2 (int min, int max);
 //Input Management
@@ -81,7 +83,7 @@ void initializeMatrix(float** M, Test test, int n);
 void freeMemory(float** M, int size);
 void free2DMemory(float*** M);
 //Execution
-bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, Mode mode, int N, int rows, int rank, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender);
+bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, Mode mode, int N, int rows, int rank, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender_mpi_all);
 //Check Symmetry Algorithms
 bool checkSym (float** M, int size);
 //bool checkSymMPIAllGather (float** M, int N, int rank, int rows);
@@ -89,7 +91,7 @@ bool checkSymMPI (float** M, int N, int rank, int rows);
 //Transposition Algorithms
 void matTranspose (float** M, float** T, int size);
 void matTransposeMPIAllGather (float** MGEN, float** M, float** T, float** TGEN, int rank, int N, int rows, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender);
-void matTransposeMPIRowMajor (float** LM, float** TLM, float** T, int rank, int N, int rows);
+void matTransposeMPIBlock (float** MGEN, float** M, float** T, float** TGEN, int rank, int N, int rows, DataCommunicate sending, DataCommunicate receiving);
 //Control Results
 void printMatrix(float** M, int x, int y);
 void control(float** M, float** T, int N);
@@ -99,7 +101,7 @@ void bubbleSort(double* a, int size);
 void clearCache(long long int dimCache);
 void clearAllCache(void);
 //Files csv Management
-double getSequential(const int dim, const int test);
+double getSequential(const int dim, const char* code, const int mode, const int test);
 void openFile(const char* filename, const char* code, const int mode, const int dim, const int test, const int samples, const int num_threads, double avg_time, int type);
 void openFilesAvgPerMode(const char* code, const int mode, const int n, const int test, const int samples, const int num_threads, const double avg_time);
 void openFilesResultsPerMode(const char* code, const int mode, const int n, const int test, const int samples, const int num_threads, const double time);

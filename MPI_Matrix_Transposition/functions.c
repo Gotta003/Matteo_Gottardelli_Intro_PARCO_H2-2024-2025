@@ -7,17 +7,30 @@
 
 #include "functions.h"
 
-void createData(DataCommunicate* data, int size, int nprocs) {
-    data->counts=malloc(sizeof(int)*size);
-    data->displacements=malloc(sizeof(int)*size);
-    data->size=size;
-    data->nprocs=nprocs;
+void createData(DataCommunicate* data, int n_procs_x, int n_procs_y) {
+    data->counts=malloc(sizeof(int)*n_procs_x*n_procs_y);
+    if(data->counts==NULL) {
+        printf("Memory allocation failed\n");
+        MPI_Finalize();
+        exit(1);
+    }
+    data->displacements=malloc(sizeof(int)*n_procs_x*n_procs_y);
+    if(data->displacements==NULL) {
+        printf("Memory allocation failed\n");
+        MPI_Finalize();
+        exit(1);
+    }
+    data->nprocs_x=n_procs_x;
+    data->nprocs_y=n_procs_y;
+    if(n_procs_x==0 || n_procs_y==0) {
+        printf("Be careful, if you initialize the inputs in createData equal to 0, you won't allocate space!!!");
+    }
 }
 void freeData(DataCommunicate* data) {
     free(data->counts);
     free(data->displacements);
 }
-void setupCommunicator(Communicator2D* comm, int size[2], int subsizes[2], int start[2]) {
+void setupCommunicator(Communicator2D* comm, int size[2], int subsizes[2], int start[2], int resize) {
     comm->sizes[0]=size[0];
     comm->sizes[1]=size[1];
     comm->subsizes[0]=subsizes[0];
@@ -25,23 +38,29 @@ void setupCommunicator(Communicator2D* comm, int size[2], int subsizes[2], int s
     comm->starts[0]=start[0];
     comm->starts[1]=start[1];
     MPI_Type_create_subarray(2, comm->sizes, comm->subsizes, comm->starts, MPI_ORDER_C, MPI_FLOAT, &comm->submatrix_type);
-    MPI_Type_create_resized(comm->submatrix_type, 0, subsizes[0]*subsizes[1]*sizeof(float), &comm->resized_type);
+    MPI_Type_create_resized(comm->submatrix_type, 0, resize*sizeof(float), &comm->resized_type);
+}
+void commitCommunicator(Communicator2D* comm) {
     MPI_Type_commit(&comm->resized_type);
 }
-
-void dataPopulate(DataCommunicate* comm, int count, int disp_row, int disp_col) {
-    int i;
-    for (i=0; i<comm->nprocs; i++) {
-        comm->counts[i] = count;
-        comm->displacements[i]=disp_row+i*disp_col;
+void freeCommunicator(Communicator2D* comm) {
+    MPI_Type_free(&comm->resized_type);
+}
+void dataPopulate(DataCommunicate* comm, int count, int delay, int disp_row, int disp_col) {
+    int i, j;
+    for (i=0; i<comm->nprocs_x; i++) {//1
+        for (j=0; j<comm->nprocs_y; j++) {//N
+            comm->counts[i*comm->nprocs_x+j] = count;
+            comm->displacements[i*comm->nprocs_x+j]=delay+i*disp_col+j*disp_row;//0 2 8 10
+        }
     }
     /*printf("Counts:\t");
-    for(i=0; i<comm->nprocs; i++) {
+    for(i=0; i<comm->nprocs_x*comm->nprocs_y; i++) {
         printf("%d\t", comm->counts[i]);
     }
-    printf("\nDisp:\t");
-    for (i=0; i<comm->nprocs; i++) {
-        printf("%d\t");
+    printf("\t\t\tDisp:\t");
+    for (i=0; i<comm->nprocs_x*comm->nprocs_y; i++) {
+        printf("%d\t", comm->displacements[i]);
     }
     printf("\n");*/
 }
@@ -212,11 +231,12 @@ bool checkSymMPI (float** MGEN, int N, int rank, int rows) {
     int i, j;
     for (i = rank * rows; i<(rank+1)*rows && (int_sim==1); i++) {
         for (j = 0; j<i && (int_sim==1); j++) {
-            if (MGEN[i][j]!=MGEN[j][i]) {
+            if (ABS_DIFF(MGEN[i][j], MGEN[j][i])>ERROR) {
                 int_sim = 0;
             }
         }
     }
+    //printf("%d\n", int_sim);
     int global_sim;
     MPI_Reduce(&int_sim, &global_sim, 1, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
     MPI_Bcast(&global_sim, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -256,18 +276,13 @@ void matTranspose (float** M, float** T, int size) {
 void matTransposeMPIAllGather (float** MGEN, float** M, float** T, float** TGEN, int rank, int N, int rows, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender) {
     int i, j;
     MPI_Scatterv(globalsendptr, sending.counts, sending.displacements, sender.resized_type, localrecvptr, rows*N, MPI_FLOAT, 0, MPI_COMM_WORLD);
-    //MPI_Scatter(MGEN, rows, submatrix_send_type, M, rows*N, MPI_FLOAT, 0, MPI_COMM_WORLD);
     //matrixCheckPerRank(M, rank, rows, N);
     //printf("======RANK %d ======\n", rank);
     //printMatrix(M, rows, N);
-    for (i=0; i<rows; i++) {
-        for(j=0; j<N; j++) {
-            T[j][i]=M[i][j];
-        }
-    }
+    matTranspose(M, T, rows);
     //printMatrix(T, N, rows);
     for (i=0; i<N; i++) {
-        dataPopulate(&receiving, rows, i*N, rows);
+        dataPopulate(&receiving, rows, i*N, rows, 1);
         localsendptr=&(T[i][0]);
         MPI_Gatherv(localsendptr, rows, MPI_FLOAT, globalrecvptr, receiving.counts, receiving.displacements, MPI_FLOAT, 0, MPI_COMM_WORLD);
     }
@@ -288,17 +303,71 @@ void matTransposeMPIAllGather (float** MGEN, float** M, float** T, float** TGEN,
  *      end_c (int) - End column
  * Output: none
  */
-void matTransposeMPIRowMajor (float** LM, float** TLM, float** T, int rank, int N, int rows) {
+void matTransposeMPIBlock (float** MGEN, float** M, float** T, float** TGEN, int rank, int N, int rows, DataCommunicate sending, DataCommunicate receiving) {
     int i, j;
     for (i=0; i<rows; i++) {
-        for (j=0; j<N; j++) {
-            TLM[j][i]=LM[i][j];
+        dataPopulate(&sending, rows, i*N, rows, rows*N);
+        localrecvptr=&(M[i][0]);
+        MPI_Barrier(MPI_COMM_WORLD);
+        MPI_Scatterv(globalsendptr, sending.counts, sending.displacements, MPI_FLOAT, localrecvptr, rows, MPI_FLOAT, 0, MPI_COMM_WORLD);
+    }
+    //matrixCheckPerRank(M, rank, rows, N);
+    //printMatrix(M, rows, rows);
+    int col=rank%(N/rows);
+    int row=rank/(N/rows);
+    //printf("Rank %d (%d %d)", rank, row, col);
+    MPI_Barrier(MPI_COMM_WORLD);
+    //printf("Rank %d (%d %d)\n", rank, row, col);
+    if(row!=col) {//5 [1][2] -> 7 [2][1]
+        int rank_dest=col*(N/rows)+row;
+        int tag;
+        MPI_Status status;
+        //No deadlock logic
+        if(row<col) {
+            tag=rank*sending.nprocs_x*sending.nprocs_y + rank_dest;
+            for (i = 0; i < rows; i++) {
+                for (j = 0; j < rows; j++) {
+                    MPI_Send(&M[i][j], 1, MPI_FLOAT, rank_dest, tag, MPI_COMM_WORLD);
+                    //printf("Send value %.2f", M[i][j]);
+                }
+            }
+            for (i = 0; i < rows; i++) {
+                for (j = 0; j < rows; j++) {
+                    MPI_Recv(&T[j][i], 1, MPI_FLOAT, rank_dest, tag, MPI_COMM_WORLD, &status);
+                    //printf("Received value %.2f", T[j][i]);
+                }
+            }
+        }
+        else {
+            tag=rank_dest*sending.nprocs_x*sending.nprocs_y + rank;
+            for (i = 0; i < rows; i++) {
+                for (j = 0; j < rows; j++) {
+                    MPI_Recv(&T[j][i], 1, MPI_FLOAT, rank_dest, tag, MPI_COMM_WORLD, &status);
+                    //printf("Received value %.2f", T[j][i]);
+                }
+            }
+            for (i = 0; i < rows; i++) {
+                for (j = 0; j < rows; j++) {
+                    MPI_Send(&M[i][j], 1, MPI_FLOAT, rank_dest, tag, MPI_COMM_WORLD);
+                    //printf("Send value %.2f", M[i][j]);
+                }
+            }
         }
     }
-    MPI_Gather(TLM, rows*N, MPI_FLOAT, T, rows*N, MPI_FLOAT, 0, MPI_COMM_WORLD);
-    if(rank==0) {
-        printMatrix(T, N, N);
+    else {
+        matTranspose(M, T, rows);
     }
+    //printf("======RANK %d ======\n", rank);
+    //printMatrix(T, rows, rows);
+    MPI_Barrier(MPI_COMM_WORLD);
+    for (i=0; i<rows; i++) {
+        if(rank==0){
+            dataPopulate(&receiving, rows, i*N, rows, rows*N);
+        }
+        localsendptr=&(T[i][0]);
+        MPI_Gatherv(localsendptr, rows, MPI_FLOAT, globalrecvptr, receiving.counts, receiving.displacements, MPI_FLOAT, 0, MPI_COMM_WORLD);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
 }
 
 /*
@@ -386,7 +455,7 @@ void clearAllCache(void) {
  *  Output:
  *      double - Returns the average time for the sequential execution. If not found in the file, it returns 0.00
  */
-double getSequential(const int dim, const int test) {
+double getSequential(const int dim, const char* code, const int mode, const int test) {
     char line[256];
     int findex, fmode, fdimension, ftest, fsamples, fthreads;
     char fcompile[20];
@@ -401,7 +470,7 @@ double getSequential(const int dim, const int test) {
     while(!found && (fscanf(file, "%d %10s %d %d %d %d %d %lf %lf %lf %lf%%", &findex, fcompile, &fmode, &fdimension, &ftest,
           &fsamples, &fthreads, &favg_time, &fseq_time,
           &fspeedup, &fefficiency)==11)) {
-        if(fmode==1 && (strcmp(fcompile, "SO0")==0) && fdimension==dim && ftest==test) {
+        if(fmode==1 && (strcmp(fcompile, code)==0) && fdimension==dim && ftest==test) {
             found=true;
         }
     }
@@ -460,7 +529,7 @@ void openFile(const char* filename, const char* code, const int mode, const int 
     double efficiency=0.0;
     if(mode!=SEQ && type==1) {
         fclose(file);
-        seq_time=getSequential(dim, test);
+        seq_time=getSequential(dim, code, mode, test);
         file=fopen(filename, "a+"); //read and append
         if(file==NULL) {
             fprintf(stderr, "Couldn't open or create %s\n", filename);
@@ -607,26 +676,19 @@ void initializeMatrix(float** M, Test test, int n) {
  *      sublength (int) - The sublength used in some parallelism modes for block-based transposition.
  *  Output: bool - Returns `true` if the matrix was already valid. Returns `false` if a transposition was required and performed.
  */
-bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, Mode mode, int N, int rows, int rank, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender) {
+bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, Mode mode, int N, int rows, int rank, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender_mpi_all) {
     switch (mode) {
-        case SEQ: {
-            if(!checkSym(MGEN, N)) {
-                matTranspose(MGEN, TGEN, N);
-                return false;
-            }
-        }
-        break;
+        case SEQ:
         case MPI_ALL: {
-            printf("ENTERS");
             if(!checkSymMPI(MGEN, N, rank, rows)) {
-                matTransposeMPIAllGather(MGEN, M, T, TGEN, rank, N, rows, sending, receiving, sender);
+                matTransposeMPIAllGather(MGEN, M, T, TGEN, rank, N, rows, sending, receiving, sender_mpi_all);
                 return false;
             }
         }
         break;
-        case MPI_ROW_M: {
-            if(!checkSymMPI(MGEN, N, rank, rows)) {
-                matTransposeMPIRowMajor(M, T, TGEN, rank, N, rows);
+        case MPI_BLOCK: {
+            if(!checkSymMPI(MGEN, N, rank, N/(sending.nprocs_x*sending.nprocs_y))) {
+                matTransposeMPIBlock(MGEN, M, T, TGEN, rank, N, rows, sending, receiving);
                 return false;
             }
         }
@@ -662,8 +724,8 @@ void openFilesAvgPerMode(const char* code, const int mode, const int n, const in
         case MPI_ALL:
             openFile(FILENAMEMPIALL, code, mode, n, test, samples, num_threads, avg_time, 1);
             break;
-        case MPI_ROW_M:
-            openFile(FILENAMEMPIROWM, code, mode, n, test, samples, num_threads, avg_time, 1);
+        case MPI_BLOCK:
+            openFile(FILENAMEMPIBLOCK, code, mode, n, test, samples, num_threads, avg_time, 1);
             break;
         default:
             exit(1);
@@ -691,8 +753,8 @@ void openFilesResultsPerMode(const char* code, const int mode, const int n, cons
         case MPI_ALL:
             openFile(FILENAMETMPIALL, code, mode, n, test, samples, num_threads, time, 0);
             break;
-        case MPI_ROW_M:
-            openFile(FILENAMETMPIROWM, code, mode, n, test, samples, num_threads, time, 0);
+        case MPI_BLOCK:
+            openFile(FILENAMETMPIBLOCK, code, mode, n, test, samples, num_threads, time, 0);
             break;
         default:
             exit(1);
