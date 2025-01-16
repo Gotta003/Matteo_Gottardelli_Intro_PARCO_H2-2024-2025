@@ -208,7 +208,7 @@ bool checkSym (float** M, int size) {
         for (j=0; j<i && (int_sim==1); j++) {
             if(MGEN[i*N+j]!=MGEN[j*N+i]) {
                 int_sim=0;
-                MPI_Bcast(&int_sim, 1, MPI_INT, rank, MPI_COMM_WORLD);
+                MPI_Bcast(&int_sim, 1, MPI_INT, rank, actual_comm);
             }
         }
     }
@@ -227,20 +227,26 @@ bool checkSym (float** M, int size) {
  * with its transpose
  */
 bool checkSymMPI (float** MGEN, int N, int rank, int rows) {
-    int int_sim = 1;
+    int num_procs=N/rows;
+    int rows_per_proc=(N+num_procs-1)/num_procs;
+    int start=rank*rows_per_proc;
+    int end=MIN(start+rows_per_proc,N);
+    //BOOLEAN SLOW
+    int symmetric=1;
     int i, j;
-    for (i = rank * rows; i<(rank+1)*rows && (int_sim==1); i++) {
-        for (j = 0; j<i && (int_sim==1); j++) {
+    for (i = start; i<end && (symmetric==1); i++) {
+        for (j = 0; j<i && (symmetric==1); j++) {
             if (ABS_DIFF(MGEN[i][j], MGEN[j][i])>ERROR) {
-                int_sim = 0;
+                symmetric=0;
             }
         }
     }
     //printf("%d\n", int_sim);
-    int global_sim;
-    MPI_Reduce(&int_sim, &global_sim, 1, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&global_sim, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    return (global_sim==1);
+    int global;
+    //MPI_Reduce(&int_sim, &global_sim, 1, MPI_INT, MPI_MIN, 0, actual_comm);
+    //MPI_Bcast(&global_sim, 1, MPI_INT, 0, actual_comm);
+    MPI_Allreduce(&symmetric, &global, 1, MPI_INT, MPI_MIN, actual_comm);
+    return (global==1);
 }
 /*
  * Name: matTranspose
@@ -252,10 +258,10 @@ bool checkSymMPI (float** MGEN, int N, int rank, int rows) {
  *      size (int) - Dimension of the side of the squared matrix
  * Output: float** - Resulting matrix, after transposition
  */
-void matTranspose (float** M, float** T, int size) {
+void matTranspose (float** M, float** T, int x, int y) {
     int i, j;
-    for (i=0; i<size; i++) {
-        for (j=0; j<size; j++) {
+    for (i=0; i<x; i++) {
+        for (j=0; j<y; j++) {
             T[j][i]=M[i][j];
         }
     }
@@ -275,18 +281,17 @@ void matTranspose (float** M, float** T, int size) {
  */
 void matTransposeMPIAllGather (float** MGEN, float** M, float** T, float** TGEN, int rank, int N, int rows, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender) {
     int i, j;
-    MPI_Scatterv(globalsendptr, sending.counts, sending.displacements, sender.resized_type, localrecvptr, rows*N, MPI_FLOAT, 0, MPI_COMM_WORLD);
+    MPI_Scatterv(globalsendptr, sending.counts, sending.displacements, sender.resized_type, localrecvptr, rows*N, MPI_FLOAT, 0, actual_comm);
     //matrixCheckPerRank(M, rank, rows, N);
     //printf("======RANK %d ======\n", rank);
     //printMatrix(M, rows, N);
-    matTranspose(M, T, rows);
+    matTranspose(M, T, rows, N);
     //printMatrix(T, N, rows);
     for (i=0; i<N; i++) {
         dataPopulate(&receiving, rows, i*N, rows, 1);
         localsendptr=&(T[i][0]);
-        MPI_Gatherv(localsendptr, rows, MPI_FLOAT, globalrecvptr, receiving.counts, receiving.displacements, MPI_FLOAT, 0, MPI_COMM_WORLD);
+        MPI_Gatherv(localsendptr, rows, MPI_FLOAT, globalrecvptr, receiving.counts, receiving.displacements, MPI_FLOAT, 0, actual_comm);
     }
-    MPI_Barrier(MPI_COMM_WORLD);
 }
 /*
  * Name: matTransposeImpRecursive
@@ -308,15 +313,15 @@ void matTransposeMPIBlock (float** MGEN, float** M, float** T, float** TGEN, int
     for (i=0; i<rows; i++) {
         dataPopulate(&sending, rows, i*N, rows, rows*N);
         localrecvptr=&(M[i][0]);
-        MPI_Barrier(MPI_COMM_WORLD);
-        MPI_Scatterv(globalsendptr, sending.counts, sending.displacements, MPI_FLOAT, localrecvptr, rows, MPI_FLOAT, 0, MPI_COMM_WORLD);
+        //MPI_Barrier(actual_comm);
+        MPI_Scatterv(globalsendptr, sending.counts, sending.displacements, MPI_FLOAT, localrecvptr, rows, MPI_FLOAT, 0, actual_comm);
     }
     //matrixCheckPerRank(M, rank, rows, N);
     //printMatrix(M, rows, rows);
     int col=rank%(N/rows);
     int row=rank/(N/rows);
     //printf("Rank %d (%d %d)", rank, row, col);
-    MPI_Barrier(MPI_COMM_WORLD);
+    //MPI_Barrier(actual_comm);
     //printf("Rank %d (%d %d)\n", rank, row, col);
     if(row!=col) {//5 [1][2] -> 7 [2][1]
         int rank_dest=col*(N/rows)+row;
@@ -327,13 +332,13 @@ void matTransposeMPIBlock (float** MGEN, float** M, float** T, float** TGEN, int
             tag=rank*sending.nprocs_x*sending.nprocs_y + rank_dest;
             for (i = 0; i < rows; i++) {
                 for (j = 0; j < rows; j++) {
-                    MPI_Send(&M[i][j], 1, MPI_FLOAT, rank_dest, tag, MPI_COMM_WORLD);
+                    MPI_Send(&M[i][j], 1, MPI_FLOAT, rank_dest, tag, actual_comm);
                     //printf("Send value %.2f", M[i][j]);
                 }
             }
             for (i = 0; i < rows; i++) {
                 for (j = 0; j < rows; j++) {
-                    MPI_Recv(&T[j][i], 1, MPI_FLOAT, rank_dest, tag, MPI_COMM_WORLD, &status);
+                    MPI_Recv(&T[j][i], 1, MPI_FLOAT, rank_dest, tag, actual_comm, &status);
                     //printf("Received value %.2f", T[j][i]);
                 }
             }
@@ -342,32 +347,71 @@ void matTransposeMPIBlock (float** MGEN, float** M, float** T, float** TGEN, int
             tag=rank_dest*sending.nprocs_x*sending.nprocs_y + rank;
             for (i = 0; i < rows; i++) {
                 for (j = 0; j < rows; j++) {
-                    MPI_Recv(&T[j][i], 1, MPI_FLOAT, rank_dest, tag, MPI_COMM_WORLD, &status);
+                    MPI_Recv(&T[j][i], 1, MPI_FLOAT, rank_dest, tag, actual_comm, &status);
                     //printf("Received value %.2f", T[j][i]);
                 }
             }
             for (i = 0; i < rows; i++) {
                 for (j = 0; j < rows; j++) {
-                    MPI_Send(&M[i][j], 1, MPI_FLOAT, rank_dest, tag, MPI_COMM_WORLD);
+                    MPI_Send(&M[i][j], 1, MPI_FLOAT, rank_dest, tag, actual_comm);
                     //printf("Send value %.2f", M[i][j]);
                 }
             }
         }
     }
     else {
-        matTranspose(M, T, rows);
+        matTranspose(M, T, rows, rows);
     }
     //printf("======RANK %d ======\n", rank);
     //printMatrix(T, rows, rows);
-    MPI_Barrier(MPI_COMM_WORLD);
+    //MPI_Barrier(actual_comm);
     for (i=0; i<rows; i++) {
         if(rank==0){
             dataPopulate(&receiving, rows, i*N, rows, rows*N);
         }
         localsendptr=&(T[i][0]);
-        MPI_Gatherv(localsendptr, rows, MPI_FLOAT, globalrecvptr, receiving.counts, receiving.displacements, MPI_FLOAT, 0, MPI_COMM_WORLD);
+        MPI_Gatherv(localsendptr, rows, MPI_FLOAT, globalrecvptr, receiving.counts, receiving.displacements, MPI_FLOAT, 0, actual_comm);
     }
-    MPI_Barrier(MPI_COMM_WORLD);
+    //MPI_Barrier(actual_comm);
+}
+
+void matTransposeMPIBlockOPT (float** MGEN, float** M, float** T, float** TGEN, float** tempM, int rank, int N, int rows, DataCommunicate sending, DataCommunicate receiving) {
+    int i, j, target_rank;
+    double time_s, time_e;
+    //if(rank==0) {
+    //    printMatrix(MGEN, N, N);
+    //}
+    for (i = 0; i < rows; i++) {
+        dataPopulate(&sending, rows, i*N, rows, rows*N);
+        localrecvptr = &(M[i][0]);
+        MPI_Barrier(actual_comm);
+        MPI_Scatterv(globalsendptr, sending.counts, sending.displacements, MPI_FLOAT, localrecvptr, rows, MPI_FLOAT, 0, actual_comm);
+    }
+    //printf("===== M - RANK %d ====\n", rank);
+    //printMatrix(M, rows, rows);
+    //MPI_Barrier(actual_comm);
+    localrecvptr=&(M[0][0]);
+    float* tempptr=&(tempM[0][0]);
+    MPI_Sendrecv(localrecvptr, rows*rows, MPI_FLOAT, transposer.rank_dest, 0,
+                 tempptr, rows*rows, MPI_FLOAT, transposer.rank_dest, 0,
+                     actual_comm, MPI_STATUS_IGNORE);
+    //printf("===== tempM - RANK %d ====\n", rank);
+    //printMatrix(tempM, rows, rows);
+    //MPI_Barrier(actual_comm);
+    matTranspose(tempM, T, rows, rows);
+    //printf("===== T - RANK %d ====\n", rank);
+    //printMatrix(T, rows, rows);
+    //MPI_Barrier(actual_comm);
+    for (i = 0; i < rows; i++) {
+        if(rank==0){
+            dataPopulate(&receiving, rows, i*N, rows, rows*N);
+        }
+        localsendptr = &(T[i][0]);
+        MPI_Gatherv(localsendptr, rows, MPI_FLOAT, globalrecvptr, receiving.counts, receiving.displacements, MPI_FLOAT, 0, actual_comm);
+    }
+    //if(rank==0) {
+    //    printMatrix(TGEN, N, N);
+    //}
 }
 
 /*
@@ -467,10 +511,10 @@ double getSequential(const int dim, const char* code, const int mode, const int 
     }
     bool found=false;
     fgets(line, sizeof(line), file);
-    while(!found && (fscanf(file, "%d %10s %d %d %d %d %d %lf %lf %lf %lf%%", &findex, fcompile, &fmode, &fdimension, &ftest,
+    while(!found && (fscanf(file, "%d %s %d %d %d %d %d %lf %lf %lf %lf%%", &findex, fcompile, &fmode, &fdimension, &ftest,
           &fsamples, &fthreads, &favg_time, &fseq_time,
           &fspeedup, &fefficiency)==11)) {
-        if(fmode==1 && (strcmp(fcompile, code)==0) && fdimension==dim && ftest==test) {
+        if(fmode==mode && (strcmp(fcompile, code)==0) && fdimension==dim && ftest==test) {
             found=true;
         }
     }
@@ -527,7 +571,7 @@ void openFile(const char* filename, const char* code, const int mode, const int 
     double seq_time = 0.0;
     double speedup=0.0;
     double efficiency=0.0;
-    if(mode!=SEQ && type==1) {
+    if(num_threads!=1 && type==1) {
         fclose(file);
         seq_time=getSequential(dim, code, mode, test);
         file=fopen(filename, "a+"); //read and append
@@ -546,23 +590,23 @@ void openFile(const char* filename, const char* code, const int mode, const int 
     fseek(file, 0, SEEK_END);
     long long file_size=ftell(file);
     if(file_size==0 && type==1) {
-        fprintf(file, "%-10s %-10s %-5s %-10s %-10s %-10s %-10s %-15s %-15s %-10s %-10s\n", "N°", "Compile", "Mode", "Dimension", "Test_Mode", "Samples", "Threads", "Avg_Time(s)", "Seq_time(s)", "Speedup", "Efficiency");
+        fprintf(file, "%-10s %-15s %-5s %-10s %-10s %-10s %-10s %-15s %-15s %-10s %-10s\n", "N°", "Compile", "Mode", "Dimension", "Test_Mode", "Samples", "Threads", "Avg_Time(s)", "Seq_time(s)", "Speedup", "Efficiency");
     }
     else {
         if(file_size==0 && type==0) {
-            fprintf(file, "%-10s %-10s %-5s %-10s %-10s %-10s %-10s %-15s\n", "N°", "Compile", "Mode", "Dimension", "Test_Mode", "Samples", "Threads", "Time(s)");
+            fprintf(file, "%-10s %-15s %-5s %-10s %-10s %-10s %-10s %-15s\n", "N°", "Compile", "Mode", "Dimension", "Test_Mode", "Samples", "Threads", "Time(s)");
         }
     }
     char void_element='-';
     if(type==0) {
-        fprintf(file, "%-10d %-10s %-5d %-10d %-10d %-10d %-10d %-15.12lf\n", lines, code, mode, dim, test, samples, num_threads, avg_time);
+        fprintf(file, "%-10d %-15s %-5d %-10d %-10d %-10d %-10d %-15.12lf\n", lines, code, mode, dim, test, samples, num_threads, avg_time);
     }
     else {
         if(seq_time<1e-9) {
-            fprintf(file, "%-10d %-10s %-5d %-10d %-10d %-10d %-10d %-15.12f %-15c %-10c %-10c%%\n", lines, code, mode, dim, test, samples, num_threads, avg_time, void_element, void_element, void_element);
+            fprintf(file, "%-10d %-15s %-5d %-10d %-10d %-10d %-10d %-15.12f %-15c %-10c %-10c%%\n", lines, code, mode, dim, test, samples, num_threads, avg_time, void_element, void_element, void_element);
         }
         else {
-            fprintf(file, "%-10d %-10s %-5d %-10d %-10d %-10d %-10d %-15.12lf %-15.12lf %-10.2lf %-10.2lf%%\n", lines, code, mode, dim, test, samples, num_threads, avg_time, seq_time, speedup, efficiency);
+            fprintf(file, "%-10d %-15s %-5d %-10d %-10d %-10d %-10d %-15.12lf %-15.12lf %-10.2lf %-10.2lf%%\n", lines, code, mode, dim, test, samples, num_threads, avg_time, seq_time, speedup, efficiency);
         }
     }
     fclose(file);
@@ -676,7 +720,7 @@ void initializeMatrix(float** M, Test test, int n) {
  *      sublength (int) - The sublength used in some parallelism modes for block-based transposition.
  *  Output: bool - Returns `true` if the matrix was already valid. Returns `false` if a transposition was required and performed.
  */
-bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, Mode mode, int N, int rows, int rank, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender_mpi_all) {
+bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, float** tempM, Mode mode, int N, int rows, int rank, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender_mpi_all) {
     switch (mode) {
         case SEQ:
         case MPI_ALL: {
@@ -689,6 +733,12 @@ bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, Mode mod
         case MPI_BLOCK: {
             if(!checkSymMPI(MGEN, N, rank, N/(sending.nprocs_x*sending.nprocs_y))) {
                 matTransposeMPIBlock(MGEN, M, T, TGEN, rank, N, rows, sending, receiving);
+                return false;
+            }
+        }
+        case MPI_BLOCK_OPT: {
+            if(!checkSymMPI(MGEN, N, rank, N/(sending.nprocs_x*sending.nprocs_y))) {
+                matTransposeMPIBlockOPT(MGEN, M, T, TGEN, tempM, rank, N, rows, sending, receiving);
                 return false;
             }
         }
@@ -722,10 +772,28 @@ void openFilesAvgPerMode(const char* code, const int mode, const int n, const in
             openFile(FILENAMESEQ, code, mode, n, test, samples, num_threads, avg_time, 1);
             break;
         case MPI_ALL:
-            openFile(FILENAMEMPIALL, code, mode, n, test, samples, num_threads, avg_time, 1);
+            if (num_threads!=1) {
+                openFile(FILENAMEMPIALL, code, mode, n, test, samples, num_threads, avg_time, 1);
+            }
+            else {
+                openFile(FILENAMESEQ, code, mode, n, test, samples, num_threads, avg_time, 1);
+            }
             break;
         case MPI_BLOCK:
-            openFile(FILENAMEMPIBLOCK, code, mode, n, test, samples, num_threads, avg_time, 1);
+            if (num_threads!=1) {
+                openFile(FILENAMEMPIBLOCK, code, mode, n, test, samples, num_threads, avg_time, 1);
+            }
+            else {
+                openFile(FILENAMESEQ, code, mode, n, test, samples, num_threads, avg_time, 1);
+            }
+            break;
+        case MPI_BLOCK_OPT:
+            if (num_threads!=1) {
+                openFile(FILENAMEMPIBLOCKOPT, code, mode, n, test, samples, num_threads, avg_time, 1);
+            }
+            else {
+                openFile(FILENAMESEQ, code, mode, n, test, samples, num_threads, avg_time, 1);
+            }
             break;
         default:
             exit(1);
@@ -751,10 +819,28 @@ void openFilesResultsPerMode(const char* code, const int mode, const int n, cons
             openFile(FILENAMETSEQ, code, mode, n, test, samples, num_threads, time, 0);
             break;
         case MPI_ALL:
-            openFile(FILENAMETMPIALL, code, mode, n, test, samples, num_threads, time, 0);
+            if (num_threads!=1) {
+                openFile(FILENAMETMPIALL, code, mode, n, test, samples, num_threads, time, 0);
+            }
+            else {
+                openFile(FILENAMETSEQ, code, mode, n, test, samples, num_threads, time, 0);
+            }
             break;
         case MPI_BLOCK:
-            openFile(FILENAMETMPIBLOCK, code, mode, n, test, samples, num_threads, time, 0);
+            if (num_threads!=1) {
+                openFile(FILENAMETMPIBLOCK, code, mode, n, test, samples, num_threads, time, 0);
+            }
+            else {
+                openFile(FILENAMETSEQ, code, mode, n, test, samples, num_threads, time, 0);
+            }
+            break;
+        case MPI_BLOCK_OPT:
+            if (num_threads!=1) {
+                openFile(FILENAMETMPIBLOCKOPT, code, mode, n, test, samples, num_threads, time, 0);
+            }
+            else {
+                openFile(FILENAMETSEQ, code, mode, n, test, samples, num_threads, time, 0);
+            }
             break;
         default:
             exit(1);

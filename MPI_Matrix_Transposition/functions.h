@@ -33,6 +33,8 @@
 #define FILENAMEMPIALL "resultsMPIAllGather.csv"
 #define FILENAMETMPIBLOCK "timesMPIBlock.csv"
 #define FILENAMEMPIBLOCK "resultsMPIBlock.csv"
+#define FILENAMETMPIBLOCKOPT "timesMPIBLOCKOpt.csv"
+#define FILENAMEMPIBLOCKOPT "resultsMPIBLOCKOpt.csv"
 
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 #define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
@@ -57,11 +59,19 @@ typedef struct DataCommunicate {
     int nprocs_x;
     int nprocs_y;
 }DataCommunicate;
+typedef struct Transposer {
+    int rank_start;
+    int rank_dest;
+    int coords_start[2];
+    int coords_dest[2];
+} Transposer;
 extern float* globalsendptr;
 extern float* localrecvptr;
 extern float* globalrecvptr;
 extern float* localsendptr;
-typedef enum {START, SEQ, MPI_ALL, MPI_BLOCK, END} Mode;
+extern MPI_Comm actual_comm;
+extern Transposer transposer;
+typedef enum {START, SEQ, MPI_ALL, MPI_BLOCK, MPI_BLOCK_OPT, END} Mode;
 //OMP_LOC_TB, OMP_GLB_TB, END} Mode;
 typedef enum {RANDOM, STATIC, SYM, WORST} Test;
 
@@ -83,15 +93,16 @@ void initializeMatrix(float** M, Test test, int n);
 void freeMemory(float** M, int size);
 void free2DMemory(float*** M);
 //Execution
-bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, Mode mode, int N, int rows, int rank, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender_mpi_all);
+bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, float** tempM, Mode mode, int N, int rows, int rank, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender_mpi_all);
 //Check Symmetry Algorithms
 bool checkSym (float** M, int size);
 //bool checkSymMPIAllGather (float** M, int N, int rank, int rows);
 bool checkSymMPI (float** M, int N, int rank, int rows);
 //Transposition Algorithms
-void matTranspose (float** M, float** T, int size);
+void matTranspose (float** M, float** T, int x, int y);
 void matTransposeMPIAllGather (float** MGEN, float** M, float** T, float** TGEN, int rank, int N, int rows, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender);
 void matTransposeMPIBlock (float** MGEN, float** M, float** T, float** TGEN, int rank, int N, int rows, DataCommunicate sending, DataCommunicate receiving);
+void matTransposeMPIBlockOPT (float** MGEN, float** M, float** T, float** TGEN, float** tempM, int rank, int N, int rows, DataCommunicate sending, DataCommunicate receiving);
 //Control Results
 void printMatrix(float** M, int x, int y);
 void control(float** M, float** T, int N);

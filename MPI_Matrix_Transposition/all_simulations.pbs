@@ -1,0 +1,99 @@
+#!/bin/bash
+# Job name
+#PBS -N transpose
+# Output files
+#PBS -o ./transpose.o
+#PBS -e ./transpose.e
+# Queue name
+#PBS -q short_cpuQ
+# Set the maximum wall time
+#PBS -l walltime=3:00:00
+# Number of nodes, cpus, mpi processors and amount of memory
+#PBS -l select=1:ncpus=64:ompthreads=64:mem=1Gb
+# Modules for C
+module load gcc91
+gcc() {
+    gcc-9.1.0 "$@"
+}
+gcc --version
+module load mpich-3.2.1--gcc-9.1.0
+
+# Functions
+function execution {
+    for size in {4..12}; do
+        case $2 in 
+            1)       
+                mpirun -np 1 ./transpose $1 $2 $size $3 $4
+            ;;
+            2|3|4)
+                for threads in 2 4 8 16 32 64; do
+                    mpirun -np $threads ./transpose $1 $2 $size $3 $4
+                done
+            ;;
+        esac
+    done
+}
+function mode1 {
+    mpicc -O2 functions.c transpose.c -o transpose -lm
+    execution $1 $2 $3 $4
+}
+function mode2 {
+    mpicc -O2 functions.c transpose.c -o transpose -lm
+    execution MPISG $1 $2 $3
+}
+
+function mode3 {
+    mpicc -O2 functions.c transpose.c -o transpose -lm
+    execution MPIBLOCK $1 $2 $3
+}
+function mode4 {
+    mpicc -O2 functions.c transpose.c -o transpose -lm
+    execution MPIBLOCKOPT $1 $2 $3
+}
+
+NODES=$(cat $PBS_NODEFILE)
+echo The running nodes are $NODES
+
+NODES=$(sort -u $PBS_NODEFILE)
+echo The running nodes are $NODES
+
+for NODE in $NODES; do
+    echo "Node: $NODE"
+    ssh $NODE "lscpu"
+done
+
+# Select the working directory
+cd /home/matteo.gottardelli/Project_2/MPI_Matrix_Transposition
+
+original="results"
+copy_dir="$original"
+n=1
+while [[ -d $copy_dir ]]; do
+    copy_dir="${original}_$n"
+    ((n++))
+done
+mkdir -p $copy_dir
+samples=25 
+for test in {1..3}; do
+    for mode in {1..4}; do 
+        # The code should be compiled before submitting the job
+            case $mode in
+                1)
+                    mode1 MPISG $mode $test $samples
+                    mode1 MPIBLOCK $mode $test $samples
+                ;;
+                2)
+                    mode2 $mode $test $samples
+                ;;
+                3)
+                    mode3 $mode $test $samples
+                ;;
+                4)
+                    mode4 $mode $test $samples
+                ;;
+            esac
+    done
+done
+mv results*.csv $copy_dir
+mv times*.csv $copy_dir
+exit
