@@ -9,7 +9,7 @@
 # Set the maximum wall time
 #PBS -l walltime=1:00:00
 # Number of nodes, cpus, mpi processors and amount of memory
-#PBS -l select=1:ncpus=64:ompthreads=64:mem=5Gb
+#PBS -l select=1:ncpus=64:ompthreads=64:mem=128Gb
 # Modules for C
 module load gcc91
 gcc() {
@@ -23,25 +23,27 @@ function execution {
     for size in {4..12}; do
         case $2 in 
             2|4)
-                for threads in 1 2 4 8 16 32 64; do
-                    mpirun -np $threads ./transpose $1 $2 $size $3 $4
-                done
+                if [ $5 -eq 0 ]; then
+                    for threads in 1 2 4 8 16 32 64; do
+                        mpirun -np $threads ./transpose $1 $2 $size $3 $4 $5
+                    done
+                else
+                    for threads in 1 2 4 8 16; do
+                       mpirun -np $threads ./transpose $1 $2 $size $3 $4 $5
+                    done
+                fi
             ;;
         esac
     done
 }
-function mode1 {
-    mpicc -O2 functions.c transpose.c -o transpose -lm
-    execution $1 $2 $3 $4
-}
 function mode2 {
     mpicc -O2 functions.c transpose.c -o transpose -lm
-    execution MPISG $1 $2 $3
+    execution MPISG $1 $2 $3 $4
 }
 
 function mode4 {
     mpicc -O2 functions.c transpose.c -o transpose -lm
-    execution MPIBLOCKOPT $1 $2 $3
+    execution MPIBLOCKOPT $1 $2 $3 $4
 }
 
 NODES=$(cat $PBS_NODEFILE)
@@ -67,14 +69,17 @@ while [[ -d $copy_dir ]]; do
 done
 mkdir -p $copy_dir
 samples=25 
-for mode in {2..4}; do 
+for mode in {1..4}; do 
     # The code should be compiled before submitting the job
         case $mode in
+            1) 
+                mode2 2 1 $samples 0
+            ;;
             2)
-                mode2 $mode 1 $samples
+                mode2 $mode 1 $samples 1
             ;;
             4)
-                mode4 $mode 1 $samples
+                mode4 $mode 1 $samples 0
             ;;
         esac
 done

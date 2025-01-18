@@ -25,18 +25,11 @@ Repository for the second partial exam Fundamentals of Parallel Computing at Uni
 
 # Introduction
 
-The purpose of this project is studying various ways to optimize a matrix transposition starting from a sequential code. All the analysis and reflection on the result obtained can be found in the report, but to get a more in-depth of all the simulations done to do this project and the definitive results obtained you can see the folder results. The ways that I explored the Transposition and Symmetry are:<br><br>
-(1) **Sequential Code**: code running normaly without any optimization<br>
-(2) **Implicit Block**: implicit code (only one thread) using a block-based technique<br>
-(3) **Implicit Recursive**: implicit code using a recursive function<br><br>
+The purpose of this project is studying various ways to optimize a matrix transposition starting from a sequential code. All the analysis and reflection on the result obtained can be found in the report, but to get a more in-depth of all the simulations done to do this project and the definitive results obtained you can see the folder results. The ways that I explored the Transposition and Symmetry are done using MPI and then compare it with OMP, which will be results obtained from the first project:<br><br>
+(1) **MPI Parallelism Per Row**: code running in MPI dividing the original matrix in rows assigned to each process involved<br>
+(2) **MPI Parallelism Per Block**: code running in MPI dividing the original matrix in blocks of equal size on rows and columns and working with particular inputs<br>
 **OMP**:<br><br>
-Symmetry check was done in OMP with two algorithms, one exiting when the condition is respected no more (called Local) and one that does all the iterations without exiting (called global).<br>
-Transposition was done in a work-sharing and in a block-based technique.<br>
-The combionation of these 4 generated these explored ways:<br><br>
-(4) **Local Work-Sharing**<br>
-(5) **Global Work-Sharing**<br>
-(6) **Local Block-Based**<br>
-(7) **Global Block-Based**<br><br>
+The OMP algorithm chose for comparison is the best one obtained from Intro_Parco_H1, so the Block-Based Soltion.<br>
 This is a project done by Matteo Gottardelli which is the owner and responsible of any element in this repository.<br><br>
 [Back to top](#table-of-contents)
 
@@ -49,9 +42,11 @@ Matteo Gottardelli Project
  ┃ ┣ main.c                     # Main Script with essential code
  ┃ ┣ functions.h                # Headers of file functions.c
  ┃ ┣ functions.c                # Definitions in functions.h
- ┃ ┣ all_simulations.pbs        # PBS file with all the simulations done (37 minutes)
+ ┃ ┣ all_simulations.pbs        # PBS file with all the simulations done (15 minutes)
  ┃ ┗ essential_transpose.pbs    # PBS file doing the essential ones (for evaluation - 4 minutes)
  ┣ All Simulations              # All past simulations, data and file Excel
+ ┃ ┗ ...
+ ┣ OMP Data                     # Data Obtained from the code in Intro_Parco_H1
  ┃ ┗ ...
  ┣ Final Results                # Simulation to take as reference for report and the project
  ┃ ┣ Definitive_1               # Folders with all .csv files
@@ -67,7 +62,7 @@ Matteo Gottardelli Project
 
 # Software and Cluster Requirements
 - **Cluster**:<br>
-All the simulations you can find in the results folder have been done on a cluster offered by the University of Trento. These were all done in a node that had a minimum of 64 cpus for standard purposes and for OpenMP and for safe I reserved 1 Gb of memory, which is x4 the memory needed for the maximum size.<br>
+All the simulations you can find in the results folder have been done on a cluster offered by the University of Trento. These were all done in a node that had a minimum of 64 cpus for standard purposes and for OpenMP and for safe I reserved 128 Gb of memory, this is due to the fact that in this project was required the weak scaling, too, so in the worst cast the biggest matrix would have been 4096*4096*64 with an initial matrix being so big for each process, so 64 and considering all others allocation involved in this worst case, I've chosen a such big allocation.<br>
 There are the following properties of the node on which I ran the simulations:<br>
 ```bash
 Architecture:          x86_64
@@ -173,11 +168,11 @@ brew will be updated and that command will be integrated in your terminal. So, i
 4. Insert your passkey and after that you will see on your terminal as last line "Logged in as <Your ID on GitHub><br>
 5. Now run this command to clone the above repository:
 ```bash
-gh repo clone Gotta003/Matteo_Gottardelli_Intro_Parco_H1-2024-2025
+gh repo clone Gotta003/Matteo_Gottardelli_Intro_Parco_H2-2024-2025
 ```
 6. To see, if you have successfully clone the repository try to access to it, running:
 ```bash
-cd Matteo_Gottardelli_Intro_Parco_H1-2024-2025
+cd Matteo_Gottardelli_Intro_Parco_H2-2024-2025
 ```
 Now, your are in the folder.<br><br>
 
@@ -229,7 +224,7 @@ scp -r $local_path $cluster_mail:$cluster_path
 ```
 After this you will required to insert the password to access to your cluster account and after that then running this you will see the files:
 ```bash
-cd Matrix_Transposition
+cd MPI_Matrix_Transposition
 ls
 ```
 If you have any problem with scp, try to install it with brew or verify the content of the three variables running:
@@ -249,8 +244,8 @@ To run the simulation as I've run it, you have to include some libraries in the 
 1) You want to run the simulations via the pbs files and there the libraries are added, so you can skip right now<br>
 2) Do the simulation in an interactive session, because you may want to see the behaviour of a particular simulation of a set of parameters, so do this each time you enter in a new one<br>
 3) You can set them as default libraries, so they will be directly included in the interactive session<br><br>
-The simulation have been done using gcc91 and numactl library. The first one is the C compiler Version 9.1.0, meanwhile numactl is a library that allow a control of the single sockets, which will help some simulations with an high number of threads.<br>
-Remember that you are free to use other libraries, but I you want to emulate the simulations and you chose 3) follow this:<br>
+The simulation have been done using gcc91 and mpich library. The first one is the C compiler Version 9.1.0, meanwhile mpich is to support MPI compilation and running and in particular is mpich-3.2.1--gcc-9.1.0.<br>
+Remember that you are free to use other libraries, but if you want to emulate the simulations and you chose 3) follow this:<br>
 1. We have to modify the .bashrc file, an hidden one. Go to the head node, if you are in Matrix_Transposition, you may do:
 ```bash
 cd ..
@@ -264,7 +259,7 @@ vi .bashrc
 ```bash
 module load gcc91
 alias gcc=gcc-9.1.0
-module load numactl
+module load mpich-3.2.1--gcc-9.1.0
 ```
 4. Now to exit the file type the following in order:
 • 'esc' button
@@ -295,13 +290,13 @@ Be careful before running of two things:
 nano <name .pbs file>.pbs
 ``` 
 This will open you an interactive environment on which you can modify the file.<br>
-Both the pbs file have the line to modify at 22. And instead of that you have to modify the username and after it the path to the destination folder.<br>
+Both the pbs file have the line to modify at 61. And instead of that you have to modify the username and after it the path to the destination folder.<br>
 After doing this to exit from this modality press (control + X), then Y and ENTER. Now you can freerly run your pbs file as is explain in advance.<br><br>
-2. My C code in order to run on the cluster with simulation trigger implicitly the cache in order to free it an make it as clear as possible. Do to this in the header file I've put the values of the caches extracted from the command lscpu on the node with 96 CPU. This will guarantee a pretty good clean with all the system with equal or less cache dimensions. But if you run in a smaller node requesting a lower number of CPUs or you are not running on my same cluster as introduced before, you may need to change these costant. To see the properties of the node you want to run on, you can perform:
+2. My C code in order to run on the cluster with simulation trigger implicitly the cache in order to free it an make it as clear as possible. To do this in the header file I've put the values of the caches extracted from the command lscpu on the node with 96 CPU. This will guarantee a pretty good clean with all the system with equal or less cache dimensions. But if you run in a smaller node requesting a lower number of CPUs or you are not running on my same cluster as introduced before, you may need to change these costant. To see the properties of the node you want to run on, you can perform:
 ```bash
 lscpu
 ```
-An then change if you want these constants, by doing the command nano on functions.h and modify them at lines according to your system. Obviously, if you have more caches or less you have to manually change the function ClearAllCaches. Mine properties are the following: (CACHEL1D 32KB, CACHEL1I 32KB, CACHEL2 1024KB, CACHEL3 36608KB (less than 36MB but this was to made to make it a perfect power of 2)).<br><br>
+Then change if you want these constants, by doing the command nano on functions.h and modify them at lines according to your system. Obviously, if you have more caches or less you have to manually change the function ClearAllCaches. Mine properties are the following: (CACHEL1D 32KB, CACHEL1I 32KB, CACHEL2 1024KB, CACHEL3 36608KB (less than 36MB but this was to made to make it a perfect power of 2)).<br><br>
 
 [Back to top](#table-of-contents)
 
@@ -310,7 +305,7 @@ An then change if you want these constants, by doing the command nano on functio
 ### Running Time
 Now the environment is completly set and you can start running the project. You have two possibilities:<br>
 1) PBS execution<br>
-In the folder you will find two files .pbs, one transposition_complete.pbs (to run requires almost 37 minutes), which will perform all the simulations at I have performed to develop this project and a transposition_essential.pbs (to run requires 4 minutes), which are the essential like the best implicit algorithm and compilation with flags and the best OMP.<br>
+In the folder you will find two files .pbs, one transposition_complete.pbs (to run requires almost 15 minutes), which will perform all the simulations at I have performed to develop this project and a transposition_essential.pbs (to run requires 4 minutes), which are the essential like the best implicit algorithm and compilation with flags and the best OMP.<br>
 To run it you perform this:
 ```bash
 qsub <pbs file>
@@ -331,48 +326,27 @@ The definitive simulation was performed in a node with 96 CPUs, but to accomodat
 To run a simulation of a desired combination of parameters, you have to follow these steps:
 1. Open an interactive session, with the following parameters:
 ```bash
-qsub -I -l select=1:ncpus=64:ompthreads=64:mem=1Gb -q short_cpuQ
+qsub -I -l select=1:ncpus=64:ompthreads=64:mem=128Gb -q short_cpuQ
 ```
-2. Go to the folder and check the details of the architecture, if are what you are expecting:
+2. Go to the folder and check the details of the architecture, if there is what you are expecting:
 ```bash
 cd Matrix_Transposition
 lscpu
 ```
 3. Compile the code with gcc command the sequential code of the desired size or test_mode (to see the sintax of each parameter jump to [Code Overview](#code-overview))
 ```bash
-gcc -O0 functions.c transpose.c -o transpose -fopenmp -lm
+mpicc -O0 functions.c transpose.c -o transpose -fopenmp -lm
 ```
 The definitive simulation was performed in a node with 96 CPUs, but to accomodate the conditions above, the system may give you a 72 CPUs node, so some performances may be different because of that.<br><br>
 4. Then run:
 ```bash
-./transpose SO0 1 <size> <test_mode> 25
+mpirun -np <num_procs> ./transpose SO0 1 <size> <test_mode> 25
 ```
-This will generate 4 files, two dedicated for sequential code (time and average) and two general.<br><br>
-5. Now you can perform which compilation you'd like, following the following structure:
+This will generate 4 files, two dedicated for sequential code (time and average) and two general. This is the code sequential with no optimization. If you want to know the exact inputs go to the following section [Input Parameters](#input-parameters)<br><br>
+5. Now you can perform which compilation you like, following this structure:
 ```bash
-gcc <efficiency flag -O0/-O1/-O2> <other flags> functions.c transpose.c -o transpose -fopenmp -lm
+mpicc <efficiency flag -O0/-O1/-O2> functions.c transpose.c -o transpose -lm
 ```
-The last two flags are always mandatory due to my C code, because to calculate the time I use an omp function, even though I don't use OMP and -lm to explicitly link the two files in compilation, but I you want to run in OMP so from mode 4 to 7, you will have to add -fopenmp-simd<br><br>
-(OPTIONAL) Be careful, if you would like to exactly reproduce my results with OpenMP you need to setup the environment variables. So, after the compilation it's important to run the following instructions:
-```bash
-export OMP_DYNAMIC=FALSE
-export OMP_SCHEDULE=STATIC
-export OMP_PROC_BIND=spread
-export OMP_PLACES=cores
-export OMP_WAIT_POLICY=ACTIVE
-export OMP_NESTED=TRUE
-export OMP_CANCELLATION=TRUE
-```
-Is not important to set the number of threads, because that is automatically handled by my C code, but if you want for some reason setup that, you can run:
-```bash
-export OMP_NUM_THREADS=<number of threads>
-```
-6. The execution in brief:
-```bash
-<eventually numactl for 64 threads> ./transpose <code_identifier> <mode> <size> <test_mode> <samples> <n° threads (not mandatory and ignored for mode from 1-3)>
-```
-And example of numactl instruction that I've used is numactl --cpunodebind=0,1 --membind=0,1 for 64 threads.<br><br>
-Jump to [Code Overview](#code-overview)), to see a detailed description of each parameter.<br><br>
 
 [Back to top](#table-of-contents)
 
@@ -387,7 +361,7 @@ And then run the following command (if a file remove -r, the example is a folder
 ```bash
 scp -r cluster_mail:cluster_path dest_path
 ```
-Being csv files, I've computed the results and the graphs on excel, importing the file, but you may use python natively in the cluster to elaborate the data. But arrived here, you have obtained your desired data.<br><br>
+Being csv files, I've computed the results and the graphs on Excel, importing the general file, but you may use python natively in the cluster to elaborate the data. Arrived here, you have obtained your desired data on your local machine.<br><br>
 
 [Back to top](#table-of-contents)
 
@@ -395,35 +369,9 @@ Being csv files, I've computed the results and the graphs on excel, importing th
 
 # Code Overview
 ## Input Parameters
-The code takes as for input 6 parameters:<br>
-1 & 2. Acronym and modes - The first two parameters to give in input to the system is an acronym and an integer indicating a particolar mode. To allow an easy recognition and collection in Excel each different combination of modes and flags with an identifier was added as the first parameter. These are the flags used in my tests for the implicit modes:<br>
-<table>
-        <tr>
-            <th>Flag</th>
-            <th>Purpose</th>
-        </tr>
-        <tr>
-            <td>-fprefetch-loop-arrays</td>
-        	  <td>Enabling the prefetching optimizations</td>
-        </tr>
-        <tr>
-            <td>-ftree-vectorize</td>
-        	  <td>Enabling auto-vectorization of loops</td>
-        </tr>
-        <tr>
-        	  <td>-funroll-loops</td>  
-        	  <td>Unroling loops to reduce overhead</td>
-        </tr>
-        <tr>
-        	  <td>-flto/td>  
-        	  <td>Optimizing during linking</td>
-        </tr>
-        <tr>
-        	  <td>-march=native/td>  
-        	  <td>Optimizing the code for the host CPU</td>
-        </tr>
-</table>
-Each mode is identified with an integer and if there are any particular configuration with flags is indicated thanks to the acronym and there are the configurations (acronym - mode) that I have used according to my code:<br>
+The code takes as for input 6 parameters and an extra for the flag -np:<br>
+1 & 2. Acronym and modes - The first two parameters to give in input to the system is an acronym and an integer indicating a particolar mode. To allow an easy recognition and collection in Excel each different combination with an identifier that may be customable was added as the first parameter.<br>
+Each mode is identified with an integer and if there are any particular configuration with flags can be indicated thanks to the acronym, this is not the case, and there are the configurations (acronym - mode) that I have used according to my code:<br>
 <table>
         <tr>
             <th>Compiler Code</th>
@@ -432,52 +380,27 @@ Each mode is identified with an integer and if there are any particular configur
         </tr>
         <tr>
             <td>SO0</td>
-        	  <td>1</td>
-        	  <td>Sequential Code, with no optimization</td>
+              <td>1</td>
+              <td>Sequential Code, with no optimization</td>
         </tr>
         <tr>
-            <td>I2</td>
-        	  <td>2</td>
-        	  <td>Block Implicit Parallelism with optimization 2</td>
+            <td>MPISG</td>
+              <td>2</td>
+              <td>MPI scomposing in rows using standard Scatter and Gather</td>
         </tr>
         <tr>
-        	  <td>I2*</td>  
-            <td>2</td>  
-        	  <td>Block Implicit Parallelism with optimization 2 and flags summary</td>
+              <td>MPIBLOCK</td>  
+            <td>3</td>  
+              <td>MPI Block Algorithm doing a transposition one-to-one (mode not suggested for use because is pretty inefficient and may require much time, even though does its purpose</td>
         </tr>
         <tr>
-          	<td>R2</td>  
-            <td>3</td>
-        	  <td>Recursive Implicit Parallelism with optimization 2</td>
-        </tr>
-        <tr>
-            <td>R2*</td>
-        	  <td>3</td>
-        	  <td>Recursive Implicit Parallelism with optimization 2 and flags summary</td>
-        </tr>
-        <tr>
-            <td>OMPLOCWS</td>
-        	  <td>4</td> 
-        	  <td>Explicit Parallelized Code with OMP with a work-sharing technique for transposition and checking with interruption of the cycle</td>
-        </tr>
-        <tr>
-            <td>OMPGLBWS</td>
-        	  <td>5</td>
-        	  <td>Explicit Parallelized Code with OMP with a work-sharing technique for transposition and checking with NO interruption of the cycle</td>
-        </tr>
-        <tr>
-             <td>OMPLOCBB</td>
-        	  <td>6</td>
-        	  <td>Explicit Parallelized Code with OMP with a block-based technique for transposition and checking with interruption of the cycle</td>
-        </tr>
-        <tr>
-           <td>OMPGLBBB</td>
-        	  <td>7</td>
-        	  <td>Explicit Parallelized Code with OMP with a block-based technique for transposition and checking with NO interruption of the cycle</td>
+              <td>MPIBLOCKOPT</td>  
+            <td>4</td>
+              <td>Optimize Version of the Mode 3 algorithm that performs MPI Block Transposition</td>
         </tr>
 </table>
-You can add other signatures as you wish there is no limit, the most important thing is that in order to have speedup and efficiency in the results, you have to run it mandatory with SO0 1 as the first two parameters with the desired size and test_mode, but how you use the acronyms is your business, because I don't know with which flag you are running. Obviously, you have to pay attention to this, if you are in an interactive session, if you are using my pbs files, don't worry because they are already preimposted.<br><br>
-3. Size - The algorithm works only with power of two and sizes between 16 and 4096, so it takes as input the exponential of the power from 4 to 12 (16->4, 32->5, 64->6, 128->7, 256->8, 512->9, 1024->10, 2048->11, 4096->12).<br><br>
+You can add other signatures as you wish there is no limit, the most important thing is that in order to have speedup and efficiency in the results, you have to run it mandatory with the same code tag name, the same mode and insert in -np flag parameter 1. How you use the acronyms is your business, because I don't know with which flag you are running. Obviously, you have to pay attention to this, if you are in an interactive session, if you are using my pbs files, don't worry because they are already preimposted.<br><br>
+3. Size - The algorithm works only with power of two and sizes between 16 and 4096, so it takes as input the exponential of the power from 4 to 12 (16->4, 32->5, 64->6, 128->7, 256->8, 512->9, 1024->10, 2048->11, 4096->12), for the weak scaling case, its handled properly inside the program.<br><br>
 4. Test Mode - The project assigned asked only to analyze a standard case, so assign to a matrix random numbers, verify if that is symmetric and make a transposition, but to verify different behaviours I've created 4 test mode, the first for normal usage and the others for testing.<br>
 <table>
         <tr>
@@ -506,9 +429,10 @@ You can add other signatures as you wish there is no limit, the most important t
           <th>Mode that iniziates all the locatuibs if a matrix with the same value, but after that changes the one at the bottom right of the matrix, but not on the main diagonal, because my algorithms will run from the high to low, row by row, being row-based algorithms. So, this will lead to a check of symmetry that will be true until the last one which will lead to a matrix transposition.</th>
         </tr>
 </table>
-The generation of the same values obviously doing simulations will logically be inaccurate if the cache is not free. In my code the problem is not present in the most cases, thanks to a function that indirectly frees the caches, so these static matrices would be a problem.<br><br>
+The generation of the same values obviously doing simulations will logically be inaccurate if the cache is not free. In my code the problem is not present in the most cases, thanks to a function that indirectly frees the caches, so these static matrices would be a problem. In this project, I focused on the first mode in order to study reproducibility.<br><br>
 5. Samples - In my code, at each execution will be output directly the average of the times, in order to internally compute the speedup and the efficienct thanks to that algorithm a number of samples can be inputed and all the outputs will be viewable in times*.csv files, but the average time, the speedup and the efficiency will be calculated according to the 40% in the middle of the data. Because of this I've decided to put a minimum of input samples per simulation on 25, in order to take the 10 values in the middle of an ordered array and cutting off the outliers, but there is no above limit, but to it parsimonously, otherwise your simulation can be take an enormous amount of time.<br><br>
-6. Number of Threads - This is a not mandatory parameter in the first three modes (sequential and implicit) and the program will work otherwise, because that will be just ignored, but for the other modes (OMP), that is mandatory. The value has to be a power of 2 and the numbers have to be between 1 and 64, so in this specific project could not be run threads other than 1, 2, 4, 8, 16, 32 and 64.<br><br>
+6. Scaling - This is a parameter that accepts only 0 and 1, the first one is for strong scaling, so a fixed size and a changing number of processes computation, which is the standard reasoning, the second is for weak scaling, so for each process has to be allocated the same starting quantity, so the only way to do that is creating an initial matrix N*num_procsxN, assigning to each process an NxN. This is recommended to be runned with mode 2 and only with that, the logic with the other was not implemented, because was not asked for the delivery.
+EXTRA -np. Number of Processes - This is mandatory parameter and I have used a power of 2 and the numbers have to be between 1 and 64, so in this specific project could not be run threads other than 1, 2, 4, 8, 16, 32 and 64. The program should handle the cases that are not suitable with the mode, for example in mode 2 it executes with a correct number, because can be inserted an higher number of processes than rows, but will be threated as the number of rows, instead with mode 3 and 4 the program will directly exit.<br><br>
 
 [Back to top](#table-of-contents)
 
@@ -516,105 +440,24 @@ The generation of the same values obviously doing simulations will logically be 
 
 ## Flow of the program
 1. Verify that the input parameters inserted are correct (See above [Input Parameters](#input-parameters))<br>
-2. Choose of the subblock according to the size and the number of threads. Is always chosen, but it is used only in block-based algorithms. The minimum block is 8 and the maximum according to mine smallest memory cache (32K), considering that I do two operations with floats and doing 2 cycles tells that the maximum block is the (square of 4K)=64. But, if there are threads, this isn't true anymore, so this maximum size is divided by the number of threads. So, is choosen the minimum between the half of the input size and the maximum length divided by the number of threads. Then, is verified that the block size isn't too small, so if lower of 8 it is set to that size.<br>
-3. Starting simulations, at each iterations, which will be equal to the number of samples, will happen this:<br>
+2. Delete exceeding processes and initialize the number of rows or the block dimension per process<br>
+3. Setup communicators with the custom types, counts and displacements
+4. Starting simulations, at each iterations, which will be equal to the number of samples, will happen this:<br>
    - 3.1 The cache is freed with the reasoning told before, which is an implicit call of the cache<br>
-   - 3.2 Allocation space of the start matrix and the destination one and the initialization according to the test mode inputed<br>
-   - 3.3 Simulation with starting time, end time in which the purpose of this program acts. This is checking if the start matrix is symmetric and then if not true transpose it in the destination matrix.
-   - 3.4 The memory is freed and the time obtained is written on a file according to the specific mode and on the general one of the times and then is saved in a local array<br>
+   - 3.2 Allocation space of the start matrix and the destination one and the initialization according to the test mode inputed and the allocation varying according to the scaling variable according to perform a strong scaling (0) or weak scaling (1)<br>
+   - 3.3 Allocate submatrices in which the main matrix is divided and broadcasting of the main from rank 0 to the others<br>
+   - 3.4 Simulation with starting time, end time in which the purpose of this program acts. This is checking if the start matrix is symmetric and then if not true transpose it in the destination matrix according to the starting modality<br>
+   - 3.5 The memory is freed and the time obtained is written on a file according to the specific mode and on the general one of the times and then is saved in a local array<br>
 4. After the simulations are all done, the array in which the times are saved is reorder with a bubblesort algorithm<br>
-5. Then, is took from that reordered array the 40% in the middle and from it is computed the average time and if was done the sequential code with the size and the test mode equal to this simulation, are computed the scaling and the efficiency, too. The obtained resultes are saved in simulation summary files for each mode and general ones, which are different from the one with each single times.
-6. Now, the program is ended an ready to get other data as input.
-<br><br>
-[Back to top](#table-of-contents)
+5. Then, is took from that reordered array the 40% in the middle and from it is computed the average time and if was done the sequential code with the size and the test mode equal to this simulation, are computed the scaling and the efficiency, too. The obtained resultes are saved in simulation summary files for each mode and general ones, which are different from the one with each single times.<br>
+6. Now, the program is ended an ready to get other data as input.<br><br>
 
----
-
-## Performances theorical peak (Optional Task)
-
-Because of the lack of space on the four report page, I preferred to write the tasks to do in a good and comprehensive way, so this bonus task, I've decided to put it in the ReadME. Considering the architecture of 96 CPU, to calculate the memory bandwidth, we have to consider the following formula:
-$$Memory Bandwidth = Frequency (GHz) * Memory Bus Width (bytes) * Data Rate$$
-Considering the information provided above, here there is what we need:
-• Base frequency 2,3 GHz
-• Bus width 64 bit -> 8 bytes
-• 6 memory channels per socket, with 4 sockets, the data rate will be 24 times for fast
-$$Memory Bandwidth=2,3*8*24=441,6 \frac{Gb}{s}$$
-Considering for example the sequential code, it will be run on only one CPU, so the memory bandwidth per CPU is $`441,6/96=4,6 \frac{Gb}{s}`$. If we are using more threads it will become 4,6*n° threads. From this, we know from the report that my transposition algorithm have $`2N^2`$ operations, all with floats, so the memory to be transfer will be $`8N^2`$. From this we can estimate the times theoretically doing the memory to be transfer/the memory bandwidth per CPU used. With this data here there is the relation between theoretical and sequential time:
-<table>
-        <tr>
-            <th>Size</th>
-            <th>Sequential (s)</th>
-            <th>Theoretical Time (s)</th>
-            <th>Math Relation</th>
-        </tr>
-        <tr>
-          <th>16</th>
-          <th>0,00000097</th>
-          <th>0,00000045</th>
-          <th>46,1%</th>
-        </tr>
-         <tr>
-          <th>32</th>
-          <th>0,00000325</th>
-          <th>0,00000178</th>
-          <th>54,8%</th>
-        </tr>
-         <tr>
-          <th>64</th>
-          <th>0,00001085</th>
-          <th>0,00000712</th>
-          <th>65,7%</th>
-        </tr>
-         <tr>
-          <th>128</th>
-          <th>0,00004752</th>
-          <th>0,00002849</th>
-          <th>60%</th>
-        </tr>
-        <tr>
-          <th>256</th>
-          <th>0,00021899</th>
-          <th>0,00011398</th>
-          <th>52%</th>
-        </tr>
-         <tr>
-           <th>512</th>
-            <th>0,00066400</th>
-            <th>0,000455903</th>
-            <th>68,5%</th>
-          </tr>
-         <tr>
-           <th>1024</th>
-            <th>0,00306322</th>
-            <th>0,00182361</th>
-            <th>59,5%</th>
-          </tr>
-          <tr>
-           <th>2048</th>
-            <th>0,02530560</th>
-            <th>0,00729444</th>
-            <th>28,8%</th>
-          </tr>
-         <tr>
-           <th>4096</th>
-            <th>0,12131174</th>
-            <th>0,029177767</th>
-            <th>24,1%</th>
-          </tr>
-</table>
-All the calculus and the tables can be found in Definitive Results, first table for 96 CPUs. Here below, there is the graph of the relation and is seeable that the values are mostly in the range as expected, because effective bandwidth is typically between 50% and 70% respect from the theoretical one and in the time logic the relation is the same. The downgrade in the last two sizes is caused by the bootlenecks told in the report, leading to collisions, when transfering large amounts of bytes.<br><br>
-<div align="center">
-  <p>
-      <img width="100%" src="Latex_Source/images/Image 1.06.png">
-  </p>
-</div>
-<br><br>
 [Back to top](#table-of-contents)
 
 ---
 
 # Contact
-I you have any doubts or some doesn't work and in order to accreditate this documentation for exam evaluation.<br>This is my university contact:<br><br>
+I you have any doubts, something don't work and to accreditate this documentation for exam evaluation, here below there is my university contact:<br><br>
 Matteo Gottardelli matteo.gottardelli@studenti.unitn.it
 
 [Back to top](#table-of-contents)

@@ -1,4 +1,5 @@
 //
+//
 //  main.c
 //  Matrix Transposition
 //
@@ -37,9 +38,10 @@ int main(int argc, char * argv[]) {
     inputParameters(argc);
     const char* CODE=argv[1];
     const Mode MODE=valueInputed(argc, argv[2], 2);
-    const int N=valueInputed(argc, argv[3], 3);
+    int N=valueInputed(argc, argv[3], 3);
     const int TESTING=valueInputed(argc, argv[4], 4);
     const int SAMPLES=valueInputed(argc, argv[5], 5);
+    const int SCALING=valueInputed(argc, argv[6], 6);//STRONG AND WEAK SCALING
     double* results;
     results=(double*)malloc(sizeof(double)*SAMPLES);
     if (results==NULL) {
@@ -54,10 +56,10 @@ int main(int argc, char * argv[]) {
     int n_x=1, n_y=1;
     int rows=1;
     int over=0;
+    //Delete exceeding processes
     int ranges[1][3];
     if (NUM_PROCS>N) {
         ranges[0][0]=N;
-        
     }else {
         ranges[0][0]=NUM_PROCS;
     }
@@ -88,6 +90,10 @@ int main(int argc, char * argv[]) {
         exit(1);
     }
     NUM_PROCS=MIN(NUM_PROCS, N);
+    /*if(SCALING==1) {
+        N=N*NUM_PROCS;
+    }*/
+    //Initialize number of rows per process
     if(MODE==MPI_BLOCK || MODE==MPI_BLOCK_OPT) {
         n_x=(int)sqrt(NUM_PROCS);
         n_y=(int)sqrt(NUM_PROCS);
@@ -125,6 +131,7 @@ int main(int argc, char * argv[]) {
         printf("Hello rank %d out of %d\n", rank+1, NUM_PROCS);
     }
     printf("%d/%d\t", rank, NUM_PROCS);
+    //Setup communicators
     Communicator2D sender_mpi_all;
     int size[2]={N, N};
     int subsizes[2];
@@ -150,27 +157,43 @@ int main(int argc, char * argv[]) {
             dataPopulate(&sending, 1, 0, 1, 0);
         }
     }
-    //Creation cartesian communicator
+    //Sampling Phase
     while (count<SAMPLES) {
         //Allocation in memory
         clearAllCache();
-        //Setuping
-        create2DFloatMatrix(&MGEN, N, N);
-        if(rank==0) {
-            create2DFloatMatrix(&TGEN, N, N);
-            initializeMatrix(MGEN, TESTING, N);
-            //printMatrix(MGEN, N, N);
-            globalrecvptr=&(TGEN[0][0]);
+        //Setuping Allocation in memory
+        if(SCALING==0) {
+            create2DFloatMatrix(&MGEN, N, N);
+            if(rank==0) {
+                create2DFloatMatrix(&TGEN, N, N);
+                initializeMatrix(MGEN, TESTING, N, N);
+                //printMatrix(MGEN, N, N);
+                globalrecvptr=&(TGEN[0][0]);
+            }
+        }
+        else {
+            if(SCALING==1) {
+                rows=N;
+                create2DFloatMatrix(&MGEN, N*NUM_PROCS, N);
+                if(rank==0) {
+                    create2DFloatMatrix(&TGEN, N, N*NUM_PROCS);
+                    initializeMatrix(MGEN, TESTING, N*NUM_PROCS, N);
+                    //printMatrix(MGEN, N*NUM_PROCS, N);
+                    globalrecvptr=&(TGEN[0][0]);
+                }
+            }
         }
         globalsendptr=&(MGEN[0][0]);
         subsizes[0]=N;
         subsizes[1]=N;
+        //Broadcasting the main matrix to all processes
         setupCommunicator(&gen_matrix, size, subsizes, starts, subsizes[0]*subsizes[1]);
         commitCommunicator(&gen_matrix);
         MPI_Bcast(globalsendptr, 1, gen_matrix.resized_type, 0, actual_comm);
         //printf("===== RANK %d =====\n", rank);
         //printMatrix(MGEN, N, N);
         freeCommunicator(&gen_matrix);
+        //Allocate submatrices
         if(MODE==MPI_ALL || MODE==SEQ) {
             create2DFloatMatrix(&M, rows, N);
             create2DFloatMatrix(&T, N, rows);
@@ -194,12 +217,12 @@ int main(int argc, char * argv[]) {
             }
         }
         localrecvptr=&(M[0][0]);
-        //Starting
+        //Starting Transposition
         if(rank==0) {
             tw_start=MPI_Wtime();
         }
-        bool symmetry=executionProgram(MGEN, M, T, TGEN, tempM, MODE, N, rows, rank, sending, receiving, sender_mpi_all);
-        //Ending
+        bool symmetry=executionProgram(MGEN, M, T, TGEN, tempM, MODE, N, rows, rank, SCALING, sending, receiving, sender_mpi_all);
+        //Ending Transposition
         //MPI_Barrier(actual_comm);
         if(rank==0) {
             tw_end=MPI_Wtime();
@@ -211,15 +234,21 @@ int main(int argc, char * argv[]) {
             }
             printf("Time Elapsed (get time)=%.12f\n", time);
             if(!symmetry) {
-                //printMatrix(TGEN, N, N);
+                /*if(SCALING==1) {
+                    printMatrix(TGEN, N, N*NUM_PROCS);
+                }*/
                 control(MGEN, TGEN, N);
             }
-            openFilesResultsPerMode(CODE, MODE, N, TESTING, SAMPLES, NUM_PROCS, time);
+            openFilesResultsPerMode(CODE, MODE, N, TESTING, SAMPLES, NUM_PROCS, SCALING, time);
             results[count]=time;
         }
+        //Freeing elements
         free2DMemory(&MGEN);
         free2DMemory(&M);
         free2DMemory(&T);
+        if(rank==0) {
+            free2DMemory(&TGEN);
+        }
         if(MODE==MPI_ALL || MODE==SEQ) {
             freeCommunicator(&sender_mpi_all);
         }
@@ -229,6 +258,7 @@ int main(int argc, char * argv[]) {
         count++;
         MPI_Barrier(actual_comm);
     }
+    //Exit sampling and compute average
     freeData(&sending);
     freeData(&receiving);
     if(rank!=0) {
@@ -240,13 +270,13 @@ int main(int argc, char * argv[]) {
     const int TAKE_SAMPLES=SAMPLES/5*2;//40%
     int start, end;
     //if(NUM_PROCS!=64) {
-        start=SAMPLES/2-TAKE_SAMPLES/2;
-        end=SAMPLES/2+TAKE_SAMPLES/2;
+    start=SAMPLES/2-TAKE_SAMPLES/2;
+    end=SAMPLES/2+TAKE_SAMPLES/2;
     /*}
-    else {
-        start=0;
-        end=TAKE_SAMPLES;
-    }*/
+     else {
+     start=0;
+     end=TAKE_SAMPLES;
+     }*/
     double total_time=0.0;
     bubbleSort(results, SAMPLES);
     for (i=start; i<end; i++) {
@@ -254,7 +284,7 @@ int main(int argc, char * argv[]) {
         printf("%.12lf\n", results[i]);
     }
     printf("\n\nFINAL RESULTS WITH:\nMODE %d\nDimension: %d\nTesting: %d\nSamples: %d\nThreads: %d\nAverage Time: %.12lf secs\n\n", MODE, N, TESTING, SAMPLES, NUM_PROCS, total_time/TAKE_SAMPLES);
-    openFilesAvgPerMode(CODE, MODE, N, TESTING, SAMPLES, NUM_PROCS, total_time/TAKE_SAMPLES);
+    openFilesAvgPerMode(CODE, MODE, N, TESTING, SAMPLES, NUM_PROCS, SCALING, total_time/TAKE_SAMPLES);
     free(results);
     MPI_Comm_free(&actual_comm);
     MPI_Finalize();

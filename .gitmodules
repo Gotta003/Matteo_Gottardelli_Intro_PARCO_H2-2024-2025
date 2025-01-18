@@ -1,3 +1,6 @@
 [submodule "intro_parco_h1"]
 	path = Implicit_and_OMP
 	url = https://github.com/Gotta003/Matteo_Gottardelli_Intro_Parco_H1-2024-2025.git
+[submodule "Matteo_Gottardelli_Intro_Parco_H1-2024-2025"]
+	path = Matteo_Gottardelli_Intro_Parco_H1-2024-2025
+	url = https://github.com/Gotta003/Matteo_Gottardelli_Intro_Parco_H1-2024-2025

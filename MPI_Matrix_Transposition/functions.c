@@ -226,27 +226,32 @@ bool checkSym (float** M, int size) {
  * Output: bool (true - Matrix is symmetric; false - The matrix doesn't concide
  * with its transpose
  */
-bool checkSymMPI (float** MGEN, int N, int rank, int rows) {
-    int num_procs=N/rows;
-    int rows_per_proc=(N+num_procs-1)/num_procs;
-    int start=rank*rows_per_proc;
-    int end=MIN(start+rows_per_proc,N);
-    //BOOLEAN SLOW
-    int symmetric=1;
-    int i, j;
-    for (i = start; i<end && (symmetric==1); i++) {
-        for (j = 0; j<i && (symmetric==1); j++) {
-            if (ABS_DIFF(MGEN[i][j], MGEN[j][i])>ERROR) {
-                symmetric=0;
+bool checkSymMPI (float** MGEN, int N, int rank, int rows, int scaling) {
+    if(scaling==0) {
+        int num_procs=N/rows;
+        int rows_per_proc=(N+num_procs-1)/num_procs;
+        int start=rank*rows;
+        int end=MIN(start+rows_per_proc,N);
+        //BOOLEAN SLOW
+        int symmetric=1;
+        int i, j;
+        for (i = start; i<end && (symmetric==1); i++) {
+            for (j = 0; j<i && (symmetric==1); j++) {
+                if (ABS_DIFF(MGEN[i][j], MGEN[j][i])>ERROR) {
+                    symmetric=0;
+                }
             }
         }
+        //printf("%d\n", int_sim);
+        int global;
+        //MPI_Reduce(&int_sim, &global_sim, 1, MPI_INT, MPI_MIN, 0, actual_comm);
+        //MPI_Bcast(&global_sim, 1, MPI_INT, 0, actual_comm);
+        MPI_Allreduce(&symmetric, &global, 1, MPI_INT, MPI_MIN, actual_comm);
+        return (global==1);
     }
-    //printf("%d\n", int_sim);
-    int global;
-    //MPI_Reduce(&int_sim, &global_sim, 1, MPI_INT, MPI_MIN, 0, actual_comm);
-    //MPI_Bcast(&global_sim, 1, MPI_INT, 0, actual_comm);
-    MPI_Allreduce(&symmetric, &global, 1, MPI_INT, MPI_MIN, actual_comm);
-    return (global==1);
+    else {
+        return false;
+    }
 }
 /*
  * Name: matTranspose
@@ -279,7 +284,7 @@ void matTranspose (float** M, float** T, int x, int y) {
  *      sublength (int) - Recommended to use the same value used in aligned matrix
  * Output: float** - Resulting matrix, after transposition
  */
-void matTransposeMPIAllGather (float** MGEN, float** M, float** T, float** TGEN, int rank, int N, int rows, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender) {
+void matTransposeMPIAllGather (float** MGEN, float** M, float** T, float** TGEN, int rank, int N, int rows, int scaling, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender) {
     int i, j;
     MPI_Scatterv(globalsendptr, sending.counts, sending.displacements, sender.resized_type, localrecvptr, rows*N, MPI_FLOAT, 0, actual_comm);
     //matrixCheckPerRank(M, rank, rows, N);
@@ -287,10 +292,21 @@ void matTransposeMPIAllGather (float** MGEN, float** M, float** T, float** TGEN,
     //printMatrix(M, rows, N);
     matTranspose(M, T, rows, N);
     //printMatrix(T, N, rows);
-    for (i=0; i<N; i++) {
-        dataPopulate(&receiving, rows, i*N, rows, 1);
-        localsendptr=&(T[i][0]);
-        MPI_Gatherv(localsendptr, rows, MPI_FLOAT, globalrecvptr, receiving.counts, receiving.displacements, MPI_FLOAT, 0, actual_comm);
+    if(scaling==1){
+        for (i=0; i<N; i++) {
+            dataPopulate(&receiving, rows, i*N*sending.nprocs_y, rows, 1);
+            localsendptr=&(T[i][0]);
+            MPI_Gatherv(localsendptr, rows, MPI_FLOAT, globalrecvptr, receiving.counts, receiving.displacements, MPI_FLOAT, 0, actual_comm);
+        }
+    }
+    else {
+        if(scaling==0) {
+            for (i=0; i<N; i++) {
+                dataPopulate(&receiving, rows, i*N, rows, 1);
+                localsendptr=&(T[i][0]);
+                MPI_Gatherv(localsendptr, rows, MPI_FLOAT, globalrecvptr, receiving.counts, receiving.displacements, MPI_FLOAT, 0, actual_comm);
+            }
+        }
     }
 }
 /*
@@ -499,9 +515,9 @@ void clearAllCache(void) {
  *  Output:
  *      double - Returns the average time for the sequential execution. If not found in the file, it returns 0.00
  */
-double getSequential(const int dim, const char* code, const int mode, const int test) {
+double getSequential(const int dim, const char* code, const int mode, const int test, const int scaling) {
     char line[256];
-    int findex, fmode, fdimension, ftest, fsamples, fthreads;
+    int findex, fmode, fdimension, ftest, fsamples, fthreads, fscaling;
     char fcompile[20];
     double favg_time=0.0, fseq_time, fspeedup, fefficiency;
     FILE* file=fopen(FILENAMESEQ, "a+");
@@ -511,10 +527,10 @@ double getSequential(const int dim, const char* code, const int mode, const int 
     }
     bool found=false;
     fgets(line, sizeof(line), file);
-    while(!found && (fscanf(file, "%d %s %d %d %d %d %d %lf %lf %lf %lf%%", &findex, fcompile, &fmode, &fdimension, &ftest,
-          &fsamples, &fthreads, &favg_time, &fseq_time,
-          &fspeedup, &fefficiency)==11)) {
-        if(fmode==mode && (strcmp(fcompile, code)==0) && fdimension==dim && ftest==test) {
+    while(!found && (fscanf(file, "%d %s %d %d %d %d %d %d %lf %lf %lf %lf%%", &findex, fcompile, &fmode, &fdimension, &ftest,
+          &fsamples, &fthreads, &fscaling, &favg_time, &fseq_time,
+          &fspeedup, &fefficiency)==12)) {
+        if(fmode==mode && (strcmp(fcompile, code)==0) && fdimension==dim && ftest==test && fscaling==scaling) {
             found=true;
         }
     }
@@ -536,12 +552,12 @@ double getSequential(const int dim, const char* code, const int mode, const int 
  *      dim (int) - Dimension Size
  *      test (int) - The test case identifier
  *      samples (int) - The number of samples
- *      num_threads (int) - The number of threads used
+ *      num_procs (int) - The number of threads used
  *      avg_time (double) - The average time taken for the computation
  *      type (int) - Determines the type of output file (0 - times, 1- average)
  *  Output: none
  */
-void openFile(const char* filename, const char* code, const int mode, const int dim, const int test, const int samples, const int num_threads, double avg_time, int type) {
+void openFile(const char* filename, const char* code, const int mode, const int dim, const int test, const int samples, const int num_procs, const int scaling, double avg_time, int type) {
     FILE* file=fopen(filename, "a+"); //read and append
     if(file==NULL) {
         fprintf(stderr, "Couldn't open or create %s\n", filename);
@@ -571,42 +587,52 @@ void openFile(const char* filename, const char* code, const int mode, const int 
     double seq_time = 0.0;
     double speedup=0.0;
     double efficiency=0.0;
-    if(num_threads!=1 && type==1) {
+    if(num_procs!=1 && type==1) {
         fclose(file);
-        seq_time=getSequential(dim, code, mode, test);
+        seq_time=getSequential(dim, code, mode, test, scaling);
         file=fopen(filename, "a+"); //read and append
         if(file==NULL) {
             fprintf(stderr, "Couldn't open or create %s\n", filename);
             exit(1);
         }
         speedup=seq_time/avg_time;
-        efficiency=speedup/num_threads*100;
+        if(scaling==0) {
+            efficiency=speedup/num_procs*100;
+        }
+        else {
+            efficiency=speedup*100;
+        }
     }
     else {
         seq_time=avg_time;
         speedup=seq_time/avg_time;
-        efficiency=speedup/num_threads*100;
+        if(scaling==0) {
+            efficiency=speedup/num_procs*100;
+        }
+        else {
+            efficiency=speedup*100;
+        }
     }
     fseek(file, 0, SEEK_END);
     long long file_size=ftell(file);
     if(file_size==0 && type==1) {
-        fprintf(file, "%-10s %-15s %-5s %-10s %-10s %-10s %-10s %-15s %-15s %-10s %-10s\n", "N°", "Compile", "Mode", "Dimension", "Test_Mode", "Samples", "Threads", "Avg_Time(s)", "Seq_time(s)", "Speedup", "Efficiency");
+        fprintf(file, "%-10s %-15s %-5s %-10s %-10s %-10s %-10s %-10s %-15s %-15s %-10s %-10s\n", "N°", "Compile", "Mode", "Dimension", "Test_Mode", "Samples", "N Procs", "Scaling", "Avg_Time(s)", "Seq_time(s)", "Speedup", "Efficiency");
     }
     else {
         if(file_size==0 && type==0) {
-            fprintf(file, "%-10s %-15s %-5s %-10s %-10s %-10s %-10s %-15s\n", "N°", "Compile", "Mode", "Dimension", "Test_Mode", "Samples", "Threads", "Time(s)");
+            fprintf(file, "%-10s %-15s %-5s %-10s %-10s %-10s %-10s %-10s %-15s\n", "N°", "Compile", "Mode", "Dimension", "Test_Mode", "Samples", "N Procs", "Scaling", "Time(s)");
         }
     }
     char void_element='-';
     if(type==0) {
-        fprintf(file, "%-10d %-15s %-5d %-10d %-10d %-10d %-10d %-15.12lf\n", lines, code, mode, dim, test, samples, num_threads, avg_time);
+        fprintf(file, "%-10d %-15s %-5d %-10d %-10d %-10d %-10d %-10d %-15.12lf\n", lines, code, mode, dim, test, samples, scaling, num_procs, avg_time);
     }
     else {
         if(seq_time<1e-9) {
-            fprintf(file, "%-10d %-15s %-5d %-10d %-10d %-10d %-10d %-15.12f %-15c %-10c %-10c%%\n", lines, code, mode, dim, test, samples, num_threads, avg_time, void_element, void_element, void_element);
+            fprintf(file, "%-10d %-15s %-5d %-10d %-10d %-10d %-10d %-10d %-15.12f %-15c %-10c %-10c%%\n", lines, code, mode, dim, test, samples, num_procs, scaling, avg_time, void_element, void_element, void_element);
         }
         else {
-            fprintf(file, "%-10d %-15s %-5d %-10d %-10d %-10d %-10d %-15.12lf %-15.12lf %-10.2lf %-10.2lf%%\n", lines, code, mode, dim, test, samples, num_threads, avg_time, seq_time, speedup, efficiency);
+            fprintf(file, "%-10d %-15s %-5d %-10d %-10d %-10d %-10d %-10d %-15.12lf %-15.12lf %-10.2lf %-10.2lf%%\n", lines, code, mode, dim, test, samples, num_procs, scaling, avg_time, seq_time, speedup, efficiency);
         }
     }
     fclose(file);
@@ -619,8 +645,9 @@ void openFile(const char* filename, const char* code, const int mode, const int 
  *  Output: none
  */
 void inputParameters(int argc) {
-    if(argc!=6) {
-        fprintf(stderr, "Invalid parameters. They are:\n\n(1) Code identifying the compilation (everything is acceptable, default one is SO0, is used as reference for sequential code -O0 and will be used as comparison for speedup and efficiency)\n\n(2)Integer for mode. The modes are:\n1. Sequential Code\n2. MPI Parallelism All Gather\n3. MPI Parallelism using Row Major\n\n(3) Exponential of 2 from 4 to 12 (16->4, 64->6, 1024->10, 4096->12)\n\n(4) Testing:\n0. Matrix is generated randomly\n1. A default test matrix is generated according to an algorithm (used for testing, with one interaction in checkSym and Transposition)\n2. A default test symmetric matrix (only checkSym works)\n3. The worst case scenario with a matrix, with only one element different not on main diagonal\n\n(5) Number of samples (>=25)\n\n");
+    printf("%d\n\n\n", argc);
+    if(argc!=7) {
+        fprintf(stderr, "Invalid parameters. They are:\n\n(1) Code identifying the compilation (everything is acceptable, default one is SO0, is used as reference for sequential code -O0 and will be used as comparison for speedup and efficiency)\n\n(2)Integer for mode. The modes are:\n1. Sequential Code\n2. MPI Parallelism All Gather\n3. MPI Parallelism using Row Major\n\n(3) Exponential of 2 from 4 to 12 (16->4, 64->6, 1024->10, 4096->12)\n\n(4) Testing:\n0. Matrix is generated randomly\n1. A default test matrix is generated according to an algorithm (used for testing, with one interaction in checkSym and Transposition)\n2. A default test symmetric matrix (only checkSym works)\n3. The worst case scenario with a matrix, with only one element different not on main diagonal\n\n(5) Number of samples (>=25)\n\n(6) Scaling Type:\n0. Strong Scaling (Size inputed partitioned of job among processes)\n1. Weak Scaling (Size inputed assigned to every process)\n\n");
         exit(1);
     }
 }
@@ -636,7 +663,7 @@ void inputParameters(int argc) {
  */
 int valueInputed(int argc, const char* argv, int value) {
     int returnValue=-1;
-    if(value>=2 && value<=5) {
+    if(value>=2 && value<=6) {
         switch (value) {
             case 2: {
                returnValue=atoi(argv);
@@ -645,7 +672,7 @@ int valueInputed(int argc, const char* argv, int value) {
                     exit(1);
                 }
             }
-                break;
+            break;
             case 3: {
                 returnValue=pow(2, atoi(argv));
                 if (returnValue<MIN_SIZE || returnValue>MAX_SIZE) {
@@ -653,7 +680,7 @@ int valueInputed(int argc, const char* argv, int value) {
                     exit(1);
                 }
             }
-                break;
+            break;
             case 4: {
                 returnValue=atoi(argv);
                 if(returnValue>2 || returnValue<0) {
@@ -661,7 +688,7 @@ int valueInputed(int argc, const char* argv, int value) {
                     exit(1);
                 }
             }
-                break;
+            break;
             case 5: {
                 returnValue=atoi(argv);
                 if(returnValue<MIN_SAMPLES) {
@@ -669,7 +696,14 @@ int valueInputed(int argc, const char* argv, int value) {
                     exit(1);
                 }
             }
-                break;
+            break;
+            case 6:
+                returnValue=atoi(argv);
+                if(returnValue!=0 && returnValue!=1) {
+                    fprintf(stderr, "Scaling Type:\n0. Strong Scaling (Size inputed partitioned of job among processes)\n1. Weak Scaling (Size inputed assigned to every process)\n\n");
+                    exit(1);
+                }
+            break;
             default:
                 exit(1);
                 break;
@@ -686,7 +720,7 @@ int valueInputed(int argc, const char* argv, int value) {
  *      n (int) - Size of Matrix
  *  Output: none
  */
-void initializeMatrix(float** M, Test test, int n) {
+void initializeMatrix(float** M, Test test, int x, int y) {
     if(test==STATIC) {
         srand(38);
     }
@@ -696,8 +730,8 @@ void initializeMatrix(float** M, Test test, int n) {
         }
     }
     int i, j;
-    for (i=0; i<n; i++) {
-        for (j=0; j<n; j++) {
+    for (i=0; i<x; i++) {
+        for (j=0; j<y; j++) {
             switch (test) {
                 case RANDOM: M[i][j]=random_float2(0, 9999); break;
                 case STATIC:
@@ -720,24 +754,24 @@ void initializeMatrix(float** M, Test test, int n) {
  *      sublength (int) - The sublength used in some parallelism modes for block-based transposition.
  *  Output: bool - Returns `true` if the matrix was already valid. Returns `false` if a transposition was required and performed.
  */
-bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, float** tempM, Mode mode, int N, int rows, int rank, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender_mpi_all) {
+bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, float** tempM, Mode mode, int N, int rows, int rank, int scaling, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender_mpi_all) {
     switch (mode) {
         case SEQ:
         case MPI_ALL: {
-            if(!checkSymMPI(MGEN, N, rank, rows)) {
-                matTransposeMPIAllGather(MGEN, M, T, TGEN, rank, N, rows, sending, receiving, sender_mpi_all);
+            if(!checkSymMPI(MGEN, N, rank, rows, scaling)) {
+                matTransposeMPIAllGather(MGEN, M, T, TGEN, rank, N, rows, scaling, sending, receiving, sender_mpi_all);
                 return false;
             }
         }
         break;
         case MPI_BLOCK: {
-            if(!checkSymMPI(MGEN, N, rank, N/(sending.nprocs_x*sending.nprocs_y))) {
+            if(!checkSymMPI(MGEN, N, rank, N/(sending.nprocs_x*sending.nprocs_y), scaling)) {
                 matTransposeMPIBlock(MGEN, M, T, TGEN, rank, N, rows, sending, receiving);
                 return false;
             }
         }
         case MPI_BLOCK_OPT: {
-            if(!checkSymMPI(MGEN, N, rank, N/(sending.nprocs_x*sending.nprocs_y))) {
+            if(!checkSymMPI(MGEN, N, rank, N/(sending.nprocs_x*sending.nprocs_y), scaling)) {
                 matTransposeMPIBlockOPT(MGEN, M, T, TGEN, tempM, rank, N, rows, sending, receiving);
                 return false;
             }
@@ -762,37 +796,40 @@ bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, float** 
  *      n (const int) - The dimension of the matrix (number of rows/columns)
  *      test (const int) - Test for data in matrix
  *      samples (const int) - The number of samples.
- *      num_threads (const int) - The number of threads
+ *      num_procs (const int) - The number of threads
  *      avg_time (const double) - The average time taken
  */
-void openFilesAvgPerMode(const char* code, const int mode, const int n, const int test, const int samples, const int num_threads, const double avg_time) {
-    openFile(FILENAMEGEN, code, mode, n, test, samples, num_threads, avg_time, 1);
+void openFilesAvgPerMode(const char* code, const int mode, int n, const int test, const int samples, const int num_procs, const int scaling, const double avg_time) {
+    /*if(scaling==1) {
+        n=n/num_procs;
+    }*/
+    openFile(FILENAMEGEN, code, mode, n, test, samples, num_procs, scaling, avg_time, 1);
     switch (mode) {
         case SEQ:
-            openFile(FILENAMESEQ, code, mode, n, test, samples, num_threads, avg_time, 1);
+            openFile(FILENAMESEQ, code, mode, n, test, samples, num_procs, scaling, avg_time, 1);
             break;
         case MPI_ALL:
-            if (num_threads!=1) {
-                openFile(FILENAMEMPIALL, code, mode, n, test, samples, num_threads, avg_time, 1);
+            if (num_procs!=1) {
+                openFile(FILENAMEMPIALL, code, mode, n, test, samples, num_procs, scaling,  avg_time, 1);
             }
             else {
-                openFile(FILENAMESEQ, code, mode, n, test, samples, num_threads, avg_time, 1);
+                openFile(FILENAMESEQ, code, mode, n, test, samples, num_procs,  scaling, avg_time, 1);
             }
             break;
         case MPI_BLOCK:
-            if (num_threads!=1) {
-                openFile(FILENAMEMPIBLOCK, code, mode, n, test, samples, num_threads, avg_time, 1);
+            if (num_procs!=1) {
+                openFile(FILENAMEMPIBLOCK, code, mode, n, test, samples, num_procs, scaling, avg_time, 1);
             }
             else {
-                openFile(FILENAMESEQ, code, mode, n, test, samples, num_threads, avg_time, 1);
+                openFile(FILENAMESEQ, code, mode, n, test, samples, num_procs,scaling,  avg_time, 1);
             }
             break;
         case MPI_BLOCK_OPT:
-            if (num_threads!=1) {
-                openFile(FILENAMEMPIBLOCKOPT, code, mode, n, test, samples, num_threads, avg_time, 1);
+            if (num_procs!=1) {
+                openFile(FILENAMEMPIBLOCKOPT, code, mode, n, test, samples, num_procs, scaling, avg_time, 1);
             }
             else {
-                openFile(FILENAMESEQ, code, mode, n, test, samples, num_threads, avg_time, 1);
+                openFile(FILENAMESEQ, code, mode, n, test, samples, num_procs, scaling, avg_time, 1);
             }
             break;
         default:
@@ -809,37 +846,40 @@ void openFilesAvgPerMode(const char* code, const int mode, const int n, const in
  *      n (const int) - The dimension of the matrix (number of rows/columns)
  *      test (const int) - The test type used for matrix generation.
  *      samples (const int) - The number of samples for benchmarking.
- *      num_threads (const int) - The number of threads used in parallelism
+ *      num_procs (const int) - The number of threads used in parallelism
  *      time (const double) - The execution time taken for the operation
  */
-void openFilesResultsPerMode(const char* code, const int mode, const int n, const int test, const int samples, const int num_threads, const double time) {
-    openFile(FILENAMETGEN, code, mode, n, test, samples, num_threads, time, 0);
+void openFilesResultsPerMode(const char* code, const int mode, int n, const int test, const int samples, const int num_procs, const int scaling, const double time) {
+    if(scaling==1) {
+        n=n/num_procs;
+    }
+    openFile(FILENAMETGEN, code, mode, n, test, samples, num_procs, scaling, time, 0);
     switch (mode) {
         case SEQ:
-            openFile(FILENAMETSEQ, code, mode, n, test, samples, num_threads, time, 0);
+            openFile(FILENAMETSEQ, code, mode, n, test, samples, num_procs, scaling, time, 0);
             break;
         case MPI_ALL:
-            if (num_threads!=1) {
-                openFile(FILENAMETMPIALL, code, mode, n, test, samples, num_threads, time, 0);
+            if (num_procs!=1) {
+                openFile(FILENAMETMPIALL, code, mode, n, test, samples, num_procs, scaling, time, 0);
             }
             else {
-                openFile(FILENAMETSEQ, code, mode, n, test, samples, num_threads, time, 0);
+                openFile(FILENAMETSEQ, code, mode, n, test, samples, num_procs, scaling, time, 0);
             }
             break;
         case MPI_BLOCK:
-            if (num_threads!=1) {
-                openFile(FILENAMETMPIBLOCK, code, mode, n, test, samples, num_threads, time, 0);
+            if (num_procs!=1) {
+                openFile(FILENAMETMPIBLOCK, code, mode, n, test, samples, num_procs, scaling, time, 0);
             }
             else {
-                openFile(FILENAMETSEQ, code, mode, n, test, samples, num_threads, time, 0);
+                openFile(FILENAMETSEQ, code, mode, n, test, samples, num_procs, scaling, time, 0);
             }
             break;
         case MPI_BLOCK_OPT:
-            if (num_threads!=1) {
-                openFile(FILENAMETMPIBLOCKOPT, code, mode, n, test, samples, num_threads, time, 0);
+            if (num_procs!=1) {
+                openFile(FILENAMETMPIBLOCKOPT, code, mode, n, test, samples, num_procs, scaling, time, 0);
             }
             else {
-                openFile(FILENAMETSEQ, code, mode, n, test, samples, num_threads, time, 0);
+                openFile(FILENAMETSEQ, code, mode, n, test, samples, num_procs, scaling, time, 0);
             }
             break;
         default:
