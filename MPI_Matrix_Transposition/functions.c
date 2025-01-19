@@ -7,6 +7,18 @@
 
 #include "functions.h"
 
+/*
+ * Name: createData
+ * Allocates memory for the counts and displacements arrays in the DataCommunicate struct
+ * and sets the nprocs_x and nprocs_y fields.
+ *
+ * Input:
+ *      data (DataCommunicate*) - Pointer to the `DataCommunicate` structure where data will be stored
+ *      n_procs_x (int) - The number of processors in the x-direction
+ *      n_procs_y (int) - The number of processors in the y-direction
+ *
+ * Output: none
+ */
 void createData(DataCommunicate* data, int n_procs_x, int n_procs_y) {
     data->counts=malloc(sizeof(int)*n_procs_x*n_procs_y);
     if(data->counts==NULL) {
@@ -26,10 +38,33 @@ void createData(DataCommunicate* data, int n_procs_x, int n_procs_y) {
         printf("Be careful, if you initialize the inputs in createData equal to 0, you won't allocate space!!!");
     }
 }
+/*
+ * Name: freeData
+ * Frees the dynamically allocated memory for the counts and displacements arrays in the DataCommunicate structure.
+ *
+ * Input:
+ *      data (DataCommunicate*) - Pointer to the DataCommunicate structure containing the arrays to be freed
+ *
+ * Output: none
+ */
 void freeData(DataCommunicate* data) {
     free(data->counts);
     free(data->displacements);
 }
+/*
+ * Name: setupCommunicator
+ * Initializes the properties of a 2D communicator and creates necessary MPI data types
+ * for subarrays and resized subarrays based on the input parameters.
+ *
+ * Input:
+ *      comm (Communicator2D*) - Pointer to the Communicator2D structure to store communicator data
+ *      size (int[2]) - The global dimensions of the matrix (total size in each direction)
+ *      subsizes (int[2]) - The dimensions of the local subarray (size of the subarray in each direction)
+ *      start (int[2]) - The starting indices of the local subarray (position within the global matrix)
+ *      resize (int) - The resize factor for the data type, used for memory allocation size adjustment
+ *
+ * Output: none
+ */
 void setupCommunicator(Communicator2D* comm, int size[2], int subsizes[2], int start[2], int resize) {
     comm->sizes[0]=size[0];
     comm->sizes[1]=size[1];
@@ -40,12 +75,52 @@ void setupCommunicator(Communicator2D* comm, int size[2], int subsizes[2], int s
     MPI_Type_create_subarray(2, comm->sizes, comm->subsizes, comm->starts, MPI_ORDER_C, MPI_FLOAT, &comm->submatrix_type);
     MPI_Type_create_resized(comm->submatrix_type, 0, resize*sizeof(float), &comm->resized_type);
 }
+/*
+ * Name: commitCommunicator
+ * Commits the resized MPI data type for the 2D communicator.
+ * This function must be called after the MPI data types have been created.
+ *
+ * Input:
+ *      comm (Communicator2D*) - Pointer to the `Communicator2D` structure containing the resized MPI data type.
+ *
+ * Output: none
+ */
 void commitCommunicator(Communicator2D* comm) {
     MPI_Type_commit(&comm->resized_type);
 }
+/*
+ * Name: freeCommunicator
+ * Frees the MPI data types associated with the 2D communicator.
+ * This function should be called to release any resources associated with the MPI data types after their use.
+ *
+ * Input:
+ *      comm (Communicator2D*) - Pointer to the Communicator2D structure containing the resized MPI data type.
+ *
+ * Output: none
+ */
+
 void freeCommunicator(Communicator2D* comm) {
     MPI_Type_free(&comm->resized_type);
 }
+/*
+ * Name: dataPopulate
+ * Populates the counts and displacements arrays of the DataCommunicate structure
+ * with values based on the input parameters.
+ *
+ * The counts array stores the number of elements assigned to each process,
+ * while the displacements array stores the displacement offsets for the data distribution
+ * across a 2D grid of processes.
+ *
+ * Input:
+ *      comm (DataCommunicate*) - Pointer to the DataCommunicate structure that holds the
+ *   counts and displacements arrays.
+ *      count (int) - The value to be assigned to the counts array.
+ *      delay (int) - A starting value for the displacement calculations.
+ *      disp_row (int) - Increment for displacement in the row direction.
+ *      disp_col (int) - Increment for displacement in the column direction.
+ *
+ * Output: none
+ */
 void dataPopulate(DataCommunicate* comm, int count, int delay, int disp_row, int disp_col) {
     int i, j;
     for (i=0; i<comm->nprocs_x; i++) {//1
@@ -104,6 +179,25 @@ float** createFloatMatrix(int x, int y) {
     }
     return temp;
 }
+/*
+ * Name: create2DFloatMatrix
+ * Allocates memory for a 2D matrix (array of floats) with dimensions x by y, where
+ * the matrix is stored in a single contiguous block of memory, but accessed as a
+ * 2D array (matrix) for convenience.
+ *
+ * Input:
+ *      m (float***) - Pointer to a pointer to a 2D float array (matrix) that will
+ *                     be allocated.
+ *      x (int)      - Number of rows of the matrix.
+ *      y (int)      - Number of columns of the matrix.
+ *
+ * Output: none
+ *
+ * Notes:
+ *      The memory for the matrix is allocated as a contiguous block of memory for
+ *      efficiency, and each row is accessed as a pointer to its corresponding part
+ *      of the block.
+ */
 
 void create2DFloatMatrix(float*** m, int x, int y) {
     int i;
@@ -124,6 +218,18 @@ void create2DFloatMatrix(float*** m, int x, int y) {
         (*m)[i]=&(temp[i*y]);
     }
 }
+/*
+ * Name: free2DMemory
+ * Frees the memory allocated for a 2D matrix that was previously allocated using
+ * the `create2DFloatMatrix` function. It first frees the memory block where the
+ * data for the matrix is stored and then frees the array of row pointers.
+ *
+ * Input:
+ *      M (float***) - Pointer to the 2D matrix to be freed, which was allocated
+ *                     using `create2DFloatMatrix`.
+ *
+ * Output: none
+ */
 
 void free2DMemory(float*** M) {
     free(&((*M)[0][0]));
@@ -186,19 +292,6 @@ bool checkSym (float** M, int size) {
     }
     return returnBool;
 }
-
-/*
- * Name: checkSymImpStandard
- * See checkSym -Allocating the matrix in a certain manner we will increase
- * spatial temporality
- * Input:
- *      M (float**) - The allocated in heap matrix
- *      size (int) - Dimension of the side of the squared matrix
-        int sublength - Blocks of a submatrix
- * Output: bool (true - Matrix is symmetric; false - The matrix doesn't concide
- * with its transpose
- */
-
 //CAN'T DO THIS, THE ROOT RANK HAS TO BE KNOWN
 
 /*bool checkSymMPIAllGather (float** MGEN, int N, int rank, int rows) {
@@ -215,17 +308,22 @@ bool checkSym (float** M, int size) {
     return (int_sim==1);
 }*/
 /*
- * Name: checkSymImpRecursive
- * See checkSym - This technique tries to arrive to the lowest matrix possible the 16x16 and from that operate recursively, dividing in these smaller matrix
+ * Name: checkSymMPI
+ * Verifies if a distributed square matrix is symmetric using MPI across multiple processes.
+ * Each process checks a portion of the matrix and the results are reduced using MPI_Allreduce
+ * to determine if the entire matrix is symmetric.
+ *
  * Input:
- *      M (float**) - The allocated in heap matrix
- *      start_r (int) - Start row
- *      end_r (int) - End row
- *      start_c (int) - Start column
- *      end_c (int) - End column
- * Output: bool (true - Matrix is symmetric; false - The matrix doesn't concide
- * with its transpose
+ *      MGEN (float**) - The 2D matrix to be checked for symmetry (allocated in memory).
+ *      N (int) - The dimension of the matrix (number of rows and columns, N x N).
+ *      rank (int) - The rank of the current process in the MPI communicator.
+ *      rows (int) - The number of rows of the matrix assigned to the current process.
+ *      scaling (int) - A flag to indicate whether the check should be performed (scaling=0) or not (scaling!=0).
+ *
+ * Output:
+ *      bool - Returns `true` if the matrix is symmetric across all processes, otherwise returns `false`.
  */
+
 bool checkSymMPI (float** MGEN, int N, int rank, int rows, int scaling) {
     if(scaling==0) {
         int num_procs=N/rows;
@@ -272,18 +370,27 @@ void matTranspose (float** M, float** T, int x, int y) {
     }
 }
 /*
- * Name: matTransposeImpStandard
- * This code applies the block logic with an inputed subset, considering that we
- * allocated with SUBLENGTH constant, is recommended when calling this function to use
- * that variable. The logic is the same as checkSymImpStandard, but with all the elements.
- * I decided to not put an if excluding the elements on the main diagonal, because with high
- * number of matrix, there would have to be taken multiple comparisons
+ * Name: matTransposeMPIAllGather
+ * Performs a matrix transpose operation in a distributed setting using MPI, where the original matrix is divided
+ * across multiple processes. After transposing the local portion of the matrix, it gathers the transposed data from
+ * all processes and combines them into a global matrix.
+ *
  * Input:
- *      M (float**) - The allocated in heap matrix (preferable with aligned one for best performance)
- *      size (int) - Dimension of the side of the squared matrix
- *      sublength (int) - Recommended to use the same value used in aligned matrix
- * Output: float** - Resulting matrix, after transposition
+ *      MGEN (float**) - The original matrix (before transpose), distributed across processes.
+ *      M (float**) - The local portion of the matrix assigned to the current process for transpose.
+ *      T (float**) - The local transposed portion of the matrix.
+ *      TGEN (float**) - The globally transposed matrix (after all processes perform transpose).
+ *      rank (int) - The rank of the current MPI process.
+ *      N (int) - The size of the matrix (N x N), a square matrix.
+ *      rows (int) - The number of rows assigned to the current process.
+ *      scaling (int) - A flag indicating whether the matrix transpose operation should be scaled.
+ *      sending (DataCommunicate) - Contains information about the communication size and displacements for sending data.
+ *      receiving (DataCommunicate) - Contains information about the communication size and displacements for receiving data.
+ *      sender (Communicator2D) - The MPI communicator object containing details about the matrix distribution.
+ *
+ * Output: none
  */
+
 void matTransposeMPIAllGather (float** MGEN, float** M, float** T, float** TGEN, int rank, int N, int rows, int scaling, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender) {
     int i, j;
     MPI_Scatterv(globalsendptr, sending.counts, sending.displacements, sender.resized_type, localrecvptr, rows*N, MPI_FLOAT, 0, actual_comm);
@@ -310,20 +417,25 @@ void matTransposeMPIAllGather (float** MGEN, float** M, float** T, float** TGEN,
     }
 }
 /*
- * Name: matTransposeImpRecursive
- * This code applies the recursive logic. The logic is the same as checkSymImpRecursive, but with
- * all the elements and instead of returning a boolean, it will always work populating the
- * destination allocated matrix. I decided to not put an if excluding the elements on the main
- * diagonal, because with high number of matrix, there would have to be taken multiple comparisons.
+ * Name: matTransposeMPIBlock
+ * Performs a block-wise matrix transpose operation in a distributed setting using MPI, where the matrix is divided
+ * into blocks distributed across multiple processes. Each process handles a block of the matrix and exchanges
+ * data with other processes to ensure the correct transpose operation.
+ *
  * Input:
- *      M (float**) - The start allocated in heap matrix
- *      T (float**) - The destination allocated in heap matrix (has to be allocated outside)
- *      start_r (int) - Start row
- *      end_r (int) - End row
- *      start_c (int) - Start column
- *      end_c (int) - End column
+ *      MGEN (float**) - The original matrix (before transpose), distributed across processes.
+ *      M (float**) - The local portion of the matrix assigned to the current process for transpose.
+ *      T (float**) - The local transposed portion of the matrix.
+ *      TGEN (float**) - The globally transposed matrix (after all processes perform transpose).
+ *      rank (int) - The rank of the current MPI process.
+ *      N (int) - The size of the matrix (N x N), a square matrix.
+ *      rows (int) - The number of rows assigned to the current process.
+ *      sending (DataCommunicate) - Contains information about the communication size and displacements for sending data.
+ *      receiving (DataCommunicate) - Contains information about the communication size and displacements for receiving data.
+ *
  * Output: none
  */
+
 void matTransposeMPIBlock (float** MGEN, float** M, float** T, float** TGEN, int rank, int N, int rows, DataCommunicate sending, DataCommunicate receiving) {
     int i, j;
     for (i=0; i<rows; i++) {
@@ -390,6 +502,27 @@ void matTransposeMPIBlock (float** MGEN, float** M, float** T, float** TGEN, int
     }
     //MPI_Barrier(actual_comm);
 }
+/*
+ * Name: matTransposeMPIBlockOPT
+ * Performs an optimized block-wise matrix transpose operation in a distributed setting using MPI. Each process
+ * handles a local block of the matrix and exchanges the data with other processes to ensure the correct transpose
+ * operation. This version improves upon the previous version by using `MPI_Sendrecv` for communication, which
+ * optimizes the data exchange by combining send and receive operations into a single call.
+ *
+ * Input:
+ *      MGEN (float**) - The original matrix (before transpose), distributed across processes.
+ *      M (float**) - The local portion of the matrix assigned to the current process for transpose.
+ *      T (float**) - The local transposed portion of the matrix.
+ *      TGEN (float**) - The globally transposed matrix (after all processes perform transpose).
+ *      tempM (float**) - Temporary matrix used for communication between processes.
+ *      rank (int) - The rank of the current MPI process.
+ *      N (int) - The size of the matrix (N x N), a square matrix.
+ *      rows (int) - The number of rows assigned to the current process.
+ *      sending (DataCommunicate) - Contains information about the communication size and displacements for sending data.
+ *      receiving (DataCommunicate) - Contains information about the communication size and displacements for receiving data.
+ *
+ * Output: none
+ */
 
 void matTransposeMPIBlockOPT (float** MGEN, float** M, float** T, float** TGEN, float** tempM, int rank, int N, int rows, DataCommunicate sending, DataCommunicate receiving) {
     int i, j, target_rank;
@@ -447,6 +580,19 @@ void printMatrix(float** M, int x, int y) {
         printf("\n");
     }
 }
+/*
+ * Name: matrixCheckPerRank
+ * Prints the matrix data that has been assigned to the current MPI rank for debugging purposes.
+ * This function is useful to verify the data distribution across processes.
+ *
+ * Input:
+ *      M (float**) - The matrix to be printed. This is the local portion of the matrix assigned to the current rank.
+ *      rank (int) - The rank of the current MPI process.
+ *      x (int) - The number of rows assigned to the current process.
+ *      y (int) - The number of columns assigned to the current process.
+ *
+ * Output: none
+ */
 
 void matrixCheckPerRank(float** M, int rank, int x, int y) {
     int i, j;
@@ -512,6 +658,7 @@ void clearAllCache(void) {
  *  Input:
  *      dim (int) - Dimension for which we are retrieving the sequential time
  *      test (int) - Test identifier to filter the relevant entry
+ *      scaling (int) - Scaling mode defining 0. Strong 1. Weak
  *  Output:
  *      double - Returns the average time for the sequential execution. If not found in the file, it returns 0.00
  */
@@ -553,6 +700,7 @@ double getSequential(const int dim, const char* code, const int mode, const int 
  *      test (int) - The test case identifier
  *      samples (int) - The number of samples
  *      num_procs (int) - The number of threads used
+ *      scaling (int) - Scaling mode defining 0. Strong 1. Weak
  *      avg_time (double) - The average time taken for the computation
  *      type (int) - Determines the type of output file (0 - times, 1- average)
  *  Output: none
@@ -639,7 +787,7 @@ void openFile(const char* filename, const char* code, const int mode, const int 
 }
 /*
  *  Name: inputParameters
- *  Function that checks the number of arguments passed to the program (6 or 7 ok, less exits.
+ *  Function that checks the number of arguments passed to the program (7 ok, less exits or more).
  *  Input:
  *      argc (int) - The number of arguments passed to the program.
  *  Output: none
@@ -657,7 +805,7 @@ void inputParameters(int argc) {
  *  Input:
  *      argc (int) - The number of command-line arguments passed to the program
  *      argv (const char*) - A string representing the argument value to be process
- *      value (int) - The specific value identifying which input parameter is being validated (2. mode, 3. dimension, 4. test, 5. samples, 6. n° threads)
+ *      value (int) - The specific value identifying which input parameter is being validated (2. mode, 3. dimension, 4. test, 5. samples, 6. scaling)
  *  Output:
  *      returnValue (int) - The validated integer value for the corresponding parameter
  */
@@ -744,16 +892,30 @@ void initializeMatrix(float** M, Test test, int x, int y) {
     }
 }
 /*
- *  Name: executionProgram
- *  Function that handles matrix transposition based on the selected mode. The function checks if matrix meets the requirements for the selected mode (symmetry), and if not, it performs the necessary matrix transposition
- *  Input:
- *      M (float**) - The matrix that has to be transposed
- *      T (float**) - Destination Matrix
- *      mode (Mode) - The execution mode that determines the type of transposition and the parallelism
- *      n (int) - Size of Matrix
- *      sublength (int) - The sublength used in some parallelism modes for block-based transposition.
- *  Output: bool - Returns `true` if the matrix was already valid. Returns `false` if a transposition was required and performed.
+ * Name: executionProgram
+ * Executes the program based on the given mode, and performs matrix transposition using different MPI strategies.
+ * This function checks if the matrix is symmetric and, if not, performs the transposition using different strategies.
+ *
+ * Input:
+ *      MGEN (float**) - The generated matrix, typically the global matrix to check symmetry against.
+ *      M (float**) - The local matrix for the current MPI rank.
+ *      T (float**) - The matrix where the transposed result is stored.
+ *      TGEN (float**) - The matrix to store the generated transposed result.
+ *      tempM (float**) - A temporary matrix used for optimized block transposition.
+ *      mode (Mode) - The execution mode (SEQ, MPI_ALL, MPI_BLOCK, or MPI_BLOCK_OPT).
+ *      N (int) - The size of the matrix (N x N).
+ *      rows (int) - The number of rows assigned to the current rank.
+ *      rank (int) - The MPI rank of the current process.
+ *      scaling (int) - Scaling mode defining 0. Strong 1. Weak.
+ *      sending (DataCommunicate) - Structure containing the sending data for MPI operations.
+ *      receiving (DataCommunicate) - Structure containing the receiving data for MPI operations.
+ *      sender_mpi_all (Communicator2D) - The MPI communicator for the 2D process grid.
+ *
+ * Output:
+ *      bool - True if the matrix is symmetric and no transposition was needed, false if the matrix was not symmetric
+ *   and the transposition was performed.
  */
+
 bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, float** tempM, Mode mode, int N, int rows, int rank, int scaling, DataCommunicate sending, DataCommunicate receiving, Communicator2D sender_mpi_all) {
     switch (mode) {
         case SEQ:
@@ -797,6 +959,7 @@ bool executionProgram(float** MGEN, float** M, float** T, float** TGEN, float** 
  *      test (const int) - Test for data in matrix
  *      samples (const int) - The number of samples.
  *      num_procs (const int) - The number of threads
+ *      scaling (int) - Scaling mode defining 0. Strong 1. Weak
  *      avg_time (const double) - The average time taken
  */
 void openFilesAvgPerMode(const char* code, const int mode, int n, const int test, const int samples, const int num_procs, const int scaling, const double avg_time) {
@@ -847,6 +1010,7 @@ void openFilesAvgPerMode(const char* code, const int mode, int n, const int test
  *      test (const int) - The test type used for matrix generation.
  *      samples (const int) - The number of samples for benchmarking.
  *      num_procs (const int) - The number of threads used in parallelism
+ *      scaling (int) - Scaling mode defining 0. Strong 1. Weak
  *      time (const double) - The execution time taken for the operation
  */
 void openFilesResultsPerMode(const char* code, const int mode, int n, const int test, const int samples, const int num_procs, const int scaling, const double time) {
@@ -888,9 +1052,15 @@ void openFilesResultsPerMode(const char* code, const int mode, int n, const int 
     }
 }
 /*
- * Name: bubblesort
- * Reorder an Array in ascending order
+ * Name: bubbleSort
+ * Description: Sorts an array of doubles in ascending order using the bubble sort algorithm.
+ * Input:
+ *      a (double*) - A pointer to the array of doubles to be sorted.
+ *      size (int) - The number of elements in the array.
+ * Output: none
  */
+void bubbleSort(double* a, int size);
+
 void bubbleSort(double* a, int size) {
     int i, j;
     for (i=0; i<(size-1); i++) {

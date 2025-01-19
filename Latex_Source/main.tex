@@ -1,0 +1,85 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage[style=numeric-comp,useprefix,hyperref,backend=bibtex]{biblatex} % Use biblatex for citations
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{url}
+\usepackage{pgfplots}
+\usepackage{newtxtext,newtxmath}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{caption}
+\pgfplotsset{compat=1.18}
+
+\definecolor{mGreen}{rgb}{0,0.6,0}
+\definecolor{mGray}{rgb}{0.5,0.5,0.5}
+\definecolor{mPurple}{rgb}{0.58,0,0.82}
+\definecolor{backgroundColour}{rgb}{0.95,0.95,0.92}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\addbibresource{ref.bib}
+
+\setlength{\abovecaptionskip}{1pt}
+\setlength{\textfloatsep}{-2pt} 
+\setlength{\belowcaptionskip}{-2pt}
+
+\titlespacing*{\section}{0pt}{3pt plus 1pt minus 1pt}{3pt plus 1pt minus 1pt}
+
+\captionsetup[table]{width=\linewidth, belowskip=-5pt}
+
+\lstdefinestyle{CStyle}{
+    backgroundcolor=\color{backgroundColour},   
+    commentstyle=\color{mGreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{mGray},
+    stringstyle=\color{mPurple},
+    basicstyle=\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=8pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    language=C
+}
+
+\begin{document}
+
+\title{MPI Parallelizing Matrix Transposition 2024-2025}
+
+\author{
+    \IEEEauthorblockN{Matteo Gottardelli 237749}
+    \IEEEauthorblockA{\textit{Computer, Communication, and Electronics Engineering}\\
+    University of Trento, Italy\\
+    Email: matteo.gottardelli@studenti.unitn.it\\
+    \href{https://github.com/Gotta003/Matteo_Gottardelli_Intro_PARCO_H2-2024-2025}{Github Link}}
+    \\[-5.5ex]
+}
+\maketitle
+\begin{abstract}
+This study explores methods for transposing an N$\times$N matrix, focusing on parallelization of a sequential code involving a symmetry check followed by transposition if needed.
+Parallelization was achieved using MPI Parallelism and then the results have been compared with the results obtained in the first project done, with some adjustments \cite{my_first_report}.
+The performance was analyzed by comparing execution times, speedups, and efficiency for the two MPI methods developed, matrix sizes, and number of processes.
+The results obtained show that for MPI parallelism, because of the fact that the cluster on which I have run the simulations has problems in node sharing, are not good with a high number of processes and with small sizes, too.
+This is due to communication overhead and small size block manifesting the same problems as OMP, but the performance are really bad especially because I an working in the same node. So, running on a single node, I saw that OMP with increasing threads will perform slightly better than MPI, due to these bottlenecks.
+This problem rises probably due to\ some not optimized communication because when a matrix is transposed, will have no contiguous data, leading that I can't create a type to transpose them in a single communication, but I have to parse each single row of the transpose to reassemble the complete matrix.
+\end{abstract}
+
+\input{report.tex}
+\newpage
+\printbibliography 
+Link to the GitHub Page (Code):
+\href{https://github.com/Gotta003/Matteo_Gottardelli_Intro_PARCO_H2-2024-2025/tree/main/MPI_Matrix_Transposition}{Project Code}
+\newline Link to the GitHub Page (ReadME):
+\href{https://github.com/Gotta003/Matteo_Gottardelli_Intro_PARCO_H2-2024-2025/blob/main/README.md}{Project ReadME}
+
+\end{document}
