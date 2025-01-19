@@ -46,12 +46,11 @@ Matteo Gottardelli Project
  ┃ ┗ essential_transpose.pbs    # PBS file doing the essential ones (for evaluation - 4 minutes)
  ┣ All Simulations              # All past simulations, data and file Excel
  ┃ ┗ ...
- ┣ OMP Data                     # Data Obtained from the code in Intro_Parco_H1
- ┃ ┗ ...
  ┣ Final Results                # Simulation to take as reference for report and the project
- ┃ ┣ Definitive_1               # Folders with all .csv files
+ ┃ ┣ Data_MPI                   # Data chosen for study behavior
+ ┃ ┣ Data_OMP                   # Data Obtained from the code in Intro_Parco_H1
  ┃ ┣ ...                  
- ┃ ┗ analysis.xlsx              # File excel summarizing the collected data
+ ┃ ┗ Simulations Results.xlsx   # File excel summarizing the collected data
  ┣ Matteo_Gottardelli_237749_Report.pdf # Report
  ┗ Latex source                 # Folder with Original files from which the pdf was generated
 ```
