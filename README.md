@@ -38,21 +38,21 @@ This is a project done by Matteo Gottardelli which is the owner and responsible 
 # Project Layout
 ```
 Matteo Gottardelli Project
- ┣ Matrix Transposition         # Project files folder
+ ┣ MPI_Matrix_Transposition         # Project files folder
  ┃ ┣ main.c                     # Main Script with essential code
  ┃ ┣ functions.h                # Headers of file functions.c
  ┃ ┣ functions.c                # Definitions in functions.h
  ┃ ┣ all_simulations.pbs        # PBS file with all the simulations done (15 minutes)
  ┃ ┗ essential_transpose.pbs    # PBS file doing the essential ones (for evaluation - 4 minutes)
- ┣ All Simulations              # All past simulations, data and file Excel
+ ┣ All_Simulations              # All past simulations, data and file Excel
  ┃ ┗ ...
- ┣ Final Results                # Simulation to take as reference for report and the project
+ ┣ Final_Results                # Simulation to take as reference for report and the project
  ┃ ┣ Data_MPI                   # Data chosen for study behavior
  ┃ ┣ Data_OMP                   # Data Obtained from the code in Intro_Parco_H1
  ┃ ┣ ...                  
  ┃ ┗ Simulations Results.xlsx   # File excel summarizing the collected data
  ┣ Matteo_Gottardelli_237749_Report.pdf # Report
- ┗ Latex source                 # Folder with Original files from which the pdf was generated
+ ┗ Latex_source                 # Folder with Original files from which the pdf was generated
 ```
 
 [Back to top](#table-of-contents)
